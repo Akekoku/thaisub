@@ -2,6 +2,7 @@ import streamlit as st
 from groq import Groq
 import subprocess
 import os
+from pythainlp.tokenize import word_tokenize  # นำเข้าตัวตัดคำภาษาไทย
 
 # 1. ฟังก์ชันแปลงเวลา
 def format_timestamp(seconds):
@@ -11,13 +12,20 @@ def format_timestamp(seconds):
     millis = int(round((seconds - int(seconds)) * 1000))
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
-# 2. ฟังก์ชันใหม่! ช่วยตัดข้อความภาษาไทยไม่ให้ล้นจอ
-def split_thai_text(text, max_len=35):
-    # ถ้าข้อความยาวเกิน 35 ตัวอักษร ให้หั่นครึ่งแล้วปัดตกบรรทัดใหม่
-    if len(text) > max_len:
-        mid = len(text) // 2
-        return text[:mid] + "\n" + text[mid:]
-    return text
+# 2. ฟังก์ชันใหม่! ตัดคำภาษาไทยและขึ้นบรรทัดใหม่ทุกๆ 8 คำ
+def split_thai_text_by_words(text, max_words=8):
+    # ใช้ pythainlp แยกข้อความออกมาเป็นคำๆ (เช่น ['สเปรย์', 'พวก', 'นี้', 'มี', 'ฤทธิ์'])
+    words = word_tokenize(text, engine='newmm')
+    
+    # จับกลุ่มคำให้ได้บรรทัดละไม่เกิน max_words
+    lines = []
+    for i in range(0, len(words), max_words):
+        # เอาคำมาต่อกันให้เป็น 1 บรรทัด
+        line = "".join(words[i:i+max_words])
+        lines.append(line)
+    
+    # เอาแต่ละบรรทัดมาเชื่อมกันด้วยคำสั่งขึ้นบรรทัดใหม่ (\n)
+    return "\n".join(lines)
 
 st.set_page_config(page_title="AI Subtitle Burner", page_icon="🎬")
 st.title("🎬 ระบบอัปโหลดวีดีโอและฝังซับอัตโนมัติ (Groq API)")
@@ -69,8 +77,8 @@ if uploaded_file and api_key:
                 start_str = format_timestamp(start_time)
                 end_str = format_timestamp(end_time)
                 
-                # นำข้อความมาผ่านฟังก์ชันตัดบรรทัดก่อนใส่ลง SRT
-                formatted_text = split_thai_text(text.strip())
+                # ** เรียกใช้ฟังก์ชันตัดคำแบบใหม่ (ตั้งไว้ที่ 8 คำ) **
+                formatted_text = split_thai_text_by_words(text.strip(), max_words=8)
                 
                 srt_content += f"{i}\n{start_str} --> {end_str}\n{formatted_text}\n\n"
             
@@ -88,11 +96,11 @@ if uploaded_file and api_key:
             if os.path.exists("output.mp4"):
                 os.remove("output.mp4")
                 
-            # แก้ไข: เพิ่ม MarginV=50 (ดันขึ้น), Outline=2 (เพิ่มขอบดำให้อ่านง่าย)
+            # ปรับ Alignment=2 (จัดกึ่งกลางล่าง) เผื่อให้ซับอยู่ตรงกลางจอสวยๆ
             cmd = [
                 'ffmpeg', '-y',
                 '-i', 'input.mp4',
-                '-vf', "subtitles=subs.srt:fontsdir=.:force_style='Fontname=Kanit Medium,FontSize=22,MarginV=60,Outline=2,Shadow=1'",
+                '-vf', "subtitles=subs.srt:fontsdir=.:force_style='Fontname=Kanit Medium,FontSize=22,MarginV=60,Outline=2,Shadow=1,Alignment=2'",
                 '-c:a', 'copy', 
                 'output.mp4'
             ]
