@@ -78,7 +78,7 @@ if uploaded_file and api_key:
                 end_str = format_timestamp(end_time)
                 
                 # ** เรียกใช้ฟังก์ชันตัดคำแบบใหม่ (ตั้งไว้ที่ 8 คำ) **
-                formatted_text = split_thai_text_by_words(text.strip(), max_words=8)
+                formatted_text = split_thai_text_by_words(text.strip(), max_words=6)
                 
                 srt_content += f"{i}\n{start_str} --> {end_str}\n{formatted_text}\n\n"
             
