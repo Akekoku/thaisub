@@ -79,7 +79,7 @@ def get_video_dimensions(video_path):
         return 720, 1280
 
 st.set_page_config(page_title="AI Subtitle Kinetic Pro", page_icon="🎬")
-st.markdown("## 🎬 ระบบฝังซับอัตโนมัติ (Kinetic Pro)")
+st.markdown("### 🎬 ระบบฝังซับอัตโนมัติ (Kinetic Pro)")
 
 if "GROQ_API_KEY" in st.secrets:
     api_key = st.secrets["GROQ_API_KEY"]
