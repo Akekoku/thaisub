@@ -201,4 +201,6 @@ if uploaded_file and api_key:
         except subprocess.CalledProcessError:
             st.error("เกิดข้อผิดพลาดในการประมวลผลวีดีโอด้วย FFmpeg")
         finally:
-            for temp_file in
+            for temp_file in ["input.mp4", "audio.mp3", "subs.srt"]:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
