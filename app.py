@@ -20,39 +20,26 @@ def split_thai_text_by_words(text, max_words=6):
     for i in range(0, len(words), max_words):
         line = "".join(words[i:i+max_words])
         lines.append(line)
-        
-    # ส่งข้อความกลับไปโดยเชื่อมแต่ละบรรทัดด้วย \n
     return "\n".join(lines)
 
 st.set_page_config(page_title="AI Subtitle Burner Pro", page_icon="🎬")
 st.title("🎬 ระบบอัปโหลดวีดีโอและฝังซับอัตโนมัติ (Groq API)")
 
-api_key = st.text_input("🔑 ใส่ Groq API Key ของคุณ:", type="password")
+# =========================================================
+# 🔒 ส่วนที่อัปเดตใหม่: ดึง API Key จากระบบล็อกหลังบ้าน (Secrets)
+# =========================================================
+if "GROQ_API_KEY" in st.secrets:
+    api_key = st.secrets["GROQ_API_KEY"]
+else:
+    st.error("❌ ยังไม่ได้ตั้งค่าล็อก API Key ในระบบ Secrets ของ Streamlit Cloud! (โปรดตั้งค่าตามขั้นตอน)")
+    st.stop()
 
-# =========================================================
-# ⚙️ ส่วนที่เพิ่มใหม่: เมนูควบคุมสไตล์ซับไตเติลหน้าเว็บ
-# =========================================================
+# ปรับแต่งสไตล์ซับไตเติล
 st.markdown("### 🛠️ ปรับแต่งสไตล์ซับไตเติล")
 with st.expander("คลิกเพื่อเปิดเครื่องมือปรับแต่งตัวอักษรและการตัดคำ", expanded=True):
-    
-    # เมนูเลือกจำนวนคำต่อบรรทัด (5, 6, 7, 8 คำ ตามที่คุณต้องการ)
-    max_words_choice = st.selectbox(
-        "🔤 จำนวนคำสูงสุดต่อ 1 บรรทัด:", 
-        [5, 6, 7, 8], 
-        index=1  # ตั้งค่าเริ่มต้นไว้ที่ 6 คำ
-    )
-    
-    # เมนูเลือกความหนาของฟอนต์ Kanit 
-    font_weight_choice = st.selectbox(
-        "✒️ เลือกความหนาของฟอนต์ (Kanit):", 
-        ["Regular", "Medium", "Bold"], 
-        index=1  # ตั้งค่าเริ่มต้นไว้ที่ Medium
-    )
-    
-    # สไลเดอร์ปรับขนาดตัวอักษร
+    max_words_choice = st.selectbox("🔤 จำนวนคำสูงสุดต่อ 1 บรรทัด:", [5, 6, 7, 8], index=1)
+    font_weight_choice = st.selectbox("✒️ เลือกความหนาของฟอนต์ (Kanit):", ["Regular", "Medium", "Bold"], index=1)
     font_size_choice = st.slider("📏 ขนาดตัวอักษร (FontSize):", min_value=14, max_value=40, value=22)
-    
-    # สไลเดอร์ปรับระดับความสูงของซับไตเติลจากขอบล่าง
     margin_v_choice = st.slider("🔼 ระดับความสูงของซับจากขอบล่าง (MarginV):", min_value=20, max_value=200, value=60)
 
 # ส่วนของการอัปโหลดไฟล์วีดีโอ
@@ -102,7 +89,6 @@ if uploaded_file and api_key:
                 start_str = format_timestamp(start_time)
                 end_str = format_timestamp(end_time)
                 
-                # ** ส่งค่าจำนวนคำที่ผู้ใช้เลือกจากหน้าเว็บ (max_words_choice) ไปทำการตัดคำ **
                 formatted_text = split_thai_text_by_words(text.strip(), max_words=max_words_choice)
                 
                 srt_content += f"{i}\n{start_str} --> {end_str}\n{formatted_text}\n\n"
@@ -121,14 +107,12 @@ if uploaded_file and api_key:
             if os.path.exists("output.mp4"):
                 os.remove("output.mp4")
             
-            # แปลงค่าความหนาที่เลือกจากเมนู ให้กลายเป็นชื่อฟอนต์ระบบที่ FFmpeg รู้จัก
             font_name = "Kanit Medium"
             if font_weight_choice == "Regular":
                 font_name = "Kanit"
             elif font_weight_choice == "Bold":
                 font_name = "Kanit Bold"
                 
-            # นำค่าสไตล์ทั้งหมดจากตัวแปรหน้าเว็บมาประกอบในคำสั่ง FFmpeg (ใช้ f-string)
             cmd = [
                 'ffmpeg', '-y',
                 '-i', 'input.mp4',
@@ -154,4 +138,4 @@ if uploaded_file and api_key:
             for temp_file in ["input.mp4", "audio.mp3", "subs.srt"]:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
-                
+                    
