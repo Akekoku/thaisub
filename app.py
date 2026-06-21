@@ -3,13 +3,21 @@ from groq import Groq
 import subprocess
 import os
 
-# ฟังก์ชันใหม่! สำหรับแปลงเวลาเป็นรูปแบบของ SRT (ชั่วโมง:นาที:วินาที,มิลลิวินาที)
+# 1. ฟังก์ชันแปลงเวลา
 def format_timestamp(seconds):
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
     millis = int(round((seconds - int(seconds)) * 1000))
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+# 2. ฟังก์ชันใหม่! ช่วยตัดข้อความภาษาไทยไม่ให้ล้นจอ
+def split_thai_text(text, max_len=35):
+    # ถ้าข้อความยาวเกิน 35 ตัวอักษร ให้หั่นครึ่งแล้วปัดตกบรรทัดใหม่
+    if len(text) > max_len:
+        mid = len(text) // 2
+        return text[:mid] + "\n" + text[mid:]
+    return text
 
 st.set_page_config(page_title="AI Subtitle Burner", page_icon="🎬")
 st.title("🎬 ระบบอัปโหลดวีดีโอและฝังซับอัตโนมัติ (Groq API)")
@@ -40,10 +48,9 @@ if uploaded_file and api_key:
             st.error("เกิดข้อผิดพลาดในการสกัดไฟล์เสียง")
             st.stop()
 
-        st.info("🎙️ ขั้นตอนที่ 1: กำลังส่งเสียงให้ AI ถอดเป็นซับภาษาไทย... (เร็วมาก!)")
+        st.info("🎙️ ขั้นตอนที่ 1: กำลังส่งเสียงให้ AI ถอดเป็นซับภาษาไทย...")
         try:
             with open("audio.mp3", "rb") as audio_file:
-                # แก้ไข: ขอข้อมูลเป็น verbose_json แทน srt
                 transcription = client.audio.transcriptions.create(
                     model="whisper-large-v3",
                     file=("audio.mp3", audio_file),
@@ -51,24 +58,22 @@ if uploaded_file and api_key:
                     language="th"
                 )
             
-            # แปลง JSON ที่ได้จาก Groq ให้กลายเป็นฟอร์แมต SRT
             srt_content = ""
             segments = transcription.segments
             
             for i, segment in enumerate(segments, start=1):
-                # ดึงข้อมูลเวลาและข้อความ (รองรับทั้งแบบ Object และ Dictionary)
                 start_time = segment.start if hasattr(segment, 'start') else segment['start']
                 end_time = segment.end if hasattr(segment, 'end') else segment['end']
                 text = segment.text if hasattr(segment, 'text') else segment['text']
                 
-                # แปลงเวลา
                 start_str = format_timestamp(start_time)
                 end_str = format_timestamp(end_time)
                 
-                # ประกอบร่างเป็นซับไตเติล 1 ก้อน
-                srt_content += f"{i}\n{start_str} --> {end_str}\n{text.strip()}\n\n"
+                # นำข้อความมาผ่านฟังก์ชันตัดบรรทัดก่อนใส่ลง SRT
+                formatted_text = split_thai_text(text.strip())
+                
+                srt_content += f"{i}\n{start_str} --> {end_str}\n{formatted_text}\n\n"
             
-            # บันทึกเป็นไฟล์ .srt
             with open("subs.srt", "w", encoding="utf-8") as f:
                 f.write(srt_content)
                 
@@ -83,10 +88,11 @@ if uploaded_file and api_key:
             if os.path.exists("output.mp4"):
                 os.remove("output.mp4")
                 
+            # แก้ไข: เพิ่ม MarginV=50 (ดันขึ้น), Outline=2 (เพิ่มขอบดำให้อ่านง่าย)
             cmd = [
-               'ffmpeg', '-y',
+                'ffmpeg', '-y',
                 '-i', 'input.mp4',
-                '-vf', "subtitles=subs.srt:fontsdir=.:force_style='Fontname=Kanit Medium,FontSize=20'",
+                '-vf', "subtitles=subs.srt:fontsdir=.:force_style='Fontname=Kanit Medium,FontSize=22,MarginV=60,Outline=2,Shadow=1'",
                 '-c:a', 'copy', 
                 'output.mp4'
             ]
