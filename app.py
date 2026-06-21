@@ -17,6 +17,16 @@ FONT_MAP = {
     "Mali": "Mali.ttf"
 }
 
+# ฟังก์ชันแปลงโค้ดสี Hex (#FFFFFF) ให้เป็นรูปแบบ BGR ของ FFmpeg (AABBGGRR)
+def hex_to_ass_color(hex_str, is_opaque=True):
+    hex_str = hex_str.lstrip('#')
+    r = hex_str[0:2]
+    g = hex_str[2:4]
+    b = hex_str[4:6]
+    # เอามาเรียงใหม่เป็น Blue-Green-Red และเติมความทึบแสง (00 คือทึบ 100% สำหรับ ASS)
+    alpha = "00" if is_opaque else "00"
+    return f"&H{alpha}{b}{g}{r}"
+
 def format_timestamp(seconds):
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
@@ -24,7 +34,6 @@ def format_timestamp(seconds):
     millis = int(round((seconds - int(seconds)) * 1000))
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
-# 🌟 ปรับปรุงการวัดความกว้างให้แม่นยำขึ้น
 def split_text_by_pixel_width(text, font_file, pil_font_size, max_width_pixels):
     try:
         font = ImageFont.truetype(font_file, pil_font_size)
@@ -37,8 +46,6 @@ def split_text_by_pixel_width(text, font_file, pil_font_size, max_width_pixels):
     
     for word in words:
         test_line = current_line + word
-        
-        # ใช้คำสั่ง getlength เพื่อวัดความกว้างที่แท้จริงของบรรทัด
         if hasattr(font, 'getlength'):
             line_width = font.getlength(test_line)
         else:
@@ -81,16 +88,26 @@ else:
     st.stop()
 
 st.markdown("### 🛠️ ปรับแต่งสไตล์ซับไตเติล")
-with st.expander("คลิกเพื่อเปิดเครื่องมือปรับแต่งตัวอักษรและการควบคุมกรอบ Safe Zone", expanded=True):
+with st.expander("คลิกเพื่อเปิดเครื่องมือปรับแต่งตัวอักษร สี และกรอบ Safe Zone", expanded=True):
     font_choice = st.selectbox("✒️ เลือกรูปแบบฟอนต์ที่คุณต้องการ:", list(FONT_MAP.keys()), index=8)
     
+    # 🌟 เพิ่มระบบเลือกสีตัวหนังสือและสไตล์พื้นหลัง
+    st.markdown("#### 🎨 ปรับแต่งสีและลูกเล่น")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        text_color = st.color_picker("🅰️ สีตัวอักษร", "#FFFFFF") # เริ่มต้นสีขาว
+    with c2:
+        outline_color = st.color_picker("🖍️ สีของขอบตัวอักษร", "#000000") # เริ่มต้นสีดำ
+    with c3:
+        bg_style = st.selectbox("🔲 สไตล์พื้นหลัง", ["ขอบปกติ (Outline)", "แถบกล่องดำรองหลัง (Box)"])
+
+    st.markdown("#### 📏 ปรับขนาดและตำแหน่ง")
     col1, col2 = st.columns(2)
     with col1:
         font_size_choice = st.slider("📏 ขนาดตัวอักษร (FontSize):", min_value=14, max_value=40, value=18)
-        outline_choice = st.slider("🖍️ ความหนาของขอบ (Outline):", min_value=0, max_value=5, value=1)
+        outline_thickness = st.slider("✏️ ความหนาของขอบ/แถบหลัง:", min_value=0, max_value=5, value=1)
         
     with col2:
-        # 🌟 ปลดล็อกสไลเดอร์ให้ดึงได้ถึง 150% เผื่อฟอนต์อ้วนมากๆ
         max_width_pct = st.slider("🎯 ความกว้างกรอบข้อความ (% ของจอ):", min_value=50, max_value=150, value=100)
         margin_v_choice = st.slider("🔼 ระดับความสูงของซับจากขอบล่าง (MarginV):", min_value=20, max_value=200, value=50)
 
@@ -107,7 +124,7 @@ if uploaded_file and api_key:
         video_width, video_height = get_video_dimensions("input.mp4")
         allowed_pixel_width = video_width * (max_width_pct / 100)
         
-        # 🌟 ปรับสมการชดเชยความกว้างของฟอนต์ (คูณ 0.75 เพื่อให้ Python ยอมให้คำยาวขึ้นอีก)
+        # ปรับสมการชดเชยความกว้างของฟอนต์ Mali ให้สมดุล
         actual_pil_font_size = int((font_size_choice / 288) * video_height * 0.75)
         
         st.info(f"📹 วิดีโอขนาด {video_width}x{video_height}px | กางกรอบกว้าง {int(allowed_pixel_width)}px")
@@ -159,11 +176,18 @@ if uploaded_file and api_key:
         try:
             if os.path.exists("output.mp4"):
                 os.remove("output.mp4")
+            
+            # แปลงสีที่เลือกจากหน้าเว็บไปใช้ในระบบ FFmpeg
+            primary_color_ass = hex_to_ass_color(text_color)
+            outline_color_ass = hex_to_ass_color(outline_color)
+            
+            # เช็กว่าเลือกขอบธรรมดา หรือ เลือกแบบแถบกล่องดำรองหลัง (BorderStyle=3 คือทำกล่องดำทับ)
+            border_style = "1" if bg_style == "ขอบปกติ (Outline)" else "3"
                 
             cmd = [
                 'ffmpeg', '-y',
                 '-i', 'input.mp4',
-                '-vf', f"subtitles=subs.srt:fontsdir=.:force_style='Fontname={font_choice},FontSize={font_size_choice},MarginV={margin_v_choice},Outline={outline_choice},Shadow=1,Alignment=2'",
+                '-vf', f"subtitles=subs.srt:fontsdir=.:force_style='Fontname={font_choice},FontSize={font_size_choice},MarginV={margin_v_choice},PrimaryColour={primary_color_ass},OutlineColour={outline_color_ass},Outline={outline_thickness},BorderStyle={border_style},Shadow=0,Alignment=2'",
                 '-c:a', 'copy', 
                 'output.mp4'
             ]
@@ -177,6 +201,4 @@ if uploaded_file and api_key:
         except subprocess.CalledProcessError:
             st.error("เกิดข้อผิดพลาดในการประมวลผลวีดีโอด้วย FFmpeg")
         finally:
-            for temp_file in ["input.mp4", "audio.mp3", "subs.srt"]:
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
+            for temp_file in
