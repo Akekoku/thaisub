@@ -2,9 +2,9 @@ import streamlit as st
 from groq import Groq
 import subprocess
 import os
-from pythainlp.tokenize import word_tokenize  # นำเข้าตัวตัดคำภาษาไทย
+from pythainlp.tokenize import word_tokenize
 
-# 1. ฟังก์ชันแปลงเวลา
+# 1. ฟังก์ชันแปลงเวลาสำหรับไฟล์ SRT
 def format_timestamp(seconds):
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
@@ -12,25 +12,50 @@ def format_timestamp(seconds):
     millis = int(round((seconds - int(seconds)) * 1000))
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
-# 2. ฟังก์ชันใหม่! ตัดคำภาษาไทยและขึ้นบรรทัดใหม่ทุกๆ 6 คำ
+# 2. ฟังก์ชันตัดคำภาษาไทยตามจำนวนคำที่เลือกจากเมนู
 def split_thai_text_by_words(text, max_words=6):
-    # ใช้ pythainlp แยกข้อความออกมาเป็นคำๆ (เช่น ['สเปรย์', 'พวก', 'นี้', 'มี', 'ฤทธิ์'])
     words = word_tokenize(text, engine='newmm')
     
-    # จับกลุ่มคำให้ได้บรรทัดละไม่เกิน max_words
     lines = []
     for i in range(0, len(words), max_words):
-        # เอาคำมาต่อกันให้เป็น 1 บรรทัด
         line = "".join(words[i:i+max_words])
         lines.append(line)
-    
-    # เอาแต่ละบรรทัดมาเชื่อมกันด้วยคำสั่งขึ้นบรรทัดใหม่ (\n)
+        
+    # ส่งข้อความกลับไปโดยเชื่อมแต่ละบรรทัดด้วย \n
     return "\n".join(lines)
 
-st.set_page_config(page_title="AI Subtitle Burner", page_icon="🎬")
+st.set_page_config(page_title="AI Subtitle Burner Pro", page_icon="🎬")
 st.title("🎬 ระบบอัปโหลดวีดีโอและฝังซับอัตโนมัติ (Groq API)")
 
 api_key = st.text_input("🔑 ใส่ Groq API Key ของคุณ:", type="password")
+
+# =========================================================
+# ⚙️ ส่วนที่เพิ่มใหม่: เมนูควบคุมสไตล์ซับไตเติลหน้าเว็บ
+# =========================================================
+st.markdown("### 🛠️ ปรับแต่งสไตล์ซับไตเติล")
+with st.expander("คลิกเพื่อเปิดเครื่องมือปรับแต่งตัวอักษรและการตัดคำ", expanded=True):
+    
+    # เมนูเลือกจำนวนคำต่อบรรทัด (5, 6, 7, 8 คำ ตามที่คุณต้องการ)
+    max_words_choice = st.selectbox(
+        "🔤 จำนวนคำสูงสุดต่อ 1 บรรทัด:", 
+        [5, 6, 7, 8], 
+        index=1  # ตั้งค่าเริ่มต้นไว้ที่ 6 คำ
+    )
+    
+    # เมนูเลือกความหนาของฟอนต์ Kanit 
+    font_weight_choice = st.selectbox(
+        "✒️ เลือกความหนาของฟอนต์ (Kanit):", 
+        ["Regular", "Medium", "Bold"], 
+        index=1  # ตั้งค่าเริ่มต้นไว้ที่ Medium
+    )
+    
+    # สไลเดอร์ปรับขนาดตัวอักษร
+    font_size_choice = st.slider("📏 ขนาดตัวอักษร (FontSize):", min_value=14, max_value=40, value=22)
+    
+    # สไลเดอร์ปรับระดับความสูงของซับไตเติลจากขอบล่าง
+    margin_v_choice = st.slider("🔼 ระดับความสูงของซับจากขอบล่าง (MarginV):", min_value=20, max_value=200, value=60)
+
+# ส่วนของการอัปโหลดไฟล์วีดีโอ
 uploaded_file = st.file_uploader("📂 เลือกไฟล์วีดีโอ (MP4)", type=["mp4"])
 
 if uploaded_file and api_key:
@@ -77,8 +102,8 @@ if uploaded_file and api_key:
                 start_str = format_timestamp(start_time)
                 end_str = format_timestamp(end_time)
                 
-                # ** เรียกใช้ฟังก์ชันตัดคำแบบใหม่ (ตั้งไว้ที่ 8 คำ) **
-                formatted_text = split_thai_text_by_words(text.strip())
+                # ** ส่งค่าจำนวนคำที่ผู้ใช้เลือกจากหน้าเว็บ (max_words_choice) ไปทำการตัดคำ **
+                formatted_text = split_thai_text_by_words(text.strip(), max_words=max_words_choice)
                 
                 srt_content += f"{i}\n{start_str} --> {end_str}\n{formatted_text}\n\n"
             
@@ -95,12 +120,19 @@ if uploaded_file and api_key:
         try:
             if os.path.exists("output.mp4"):
                 os.remove("output.mp4")
+            
+            # แปลงค่าความหนาที่เลือกจากเมนู ให้กลายเป็นชื่อฟอนต์ระบบที่ FFmpeg รู้จัก
+            font_name = "Kanit Medium"
+            if font_weight_choice == "Regular":
+                font_name = "Kanit"
+            elif font_weight_choice == "Bold":
+                font_name = "Kanit Bold"
                 
-            # ปรับ Alignment=2 (จัดกึ่งกลางล่าง) เผื่อให้ซับอยู่ตรงกลางจอสวยๆ
+            # นำค่าสไตล์ทั้งหมดจากตัวแปรหน้าเว็บมาประกอบในคำสั่ง FFmpeg (ใช้ f-string)
             cmd = [
                 'ffmpeg', '-y',
                 '-i', 'input.mp4',
-                '-vf', "subtitles=subs.srt:fontsdir=.:force_style='Fontname=Kanit Medium,FontSize=22,MarginV=60,Outline=2,Shadow=1,Alignment=2'",
+                '-vf', f"subtitles=subs.srt:fontsdir=.:force_style='Fontname={font_name},FontSize={font_size_choice},MarginV={margin_v_choice},Outline=2,Shadow=1,Alignment=2'",
                 '-c:a', 'copy', 
                 'output.mp4'
             ]
@@ -122,3 +154,4 @@ if uploaded_file and api_key:
             for temp_file in ["input.mp4", "audio.mp3", "subs.srt"]:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
+                
