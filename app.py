@@ -12,8 +12,8 @@ def format_timestamp(seconds):
     millis = int(round((seconds - int(seconds)) * 1000))
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
-# 2. ฟังก์ชันใหม่! ตัดคำภาษาไทยและขึ้นบรรทัดใหม่ทุกๆ 8 คำ
-def split_thai_text_by_words(text, max_words=8):
+# 2. ฟังก์ชันใหม่! ตัดคำภาษาไทยและขึ้นบรรทัดใหม่ทุกๆ 6 คำ
+def split_thai_text_by_words(text, max_words=6):
     # ใช้ pythainlp แยกข้อความออกมาเป็นคำๆ (เช่น ['สเปรย์', 'พวก', 'นี้', 'มี', 'ฤทธิ์'])
     words = word_tokenize(text, engine='newmm')
     
@@ -78,7 +78,7 @@ if uploaded_file and api_key:
                 end_str = format_timestamp(end_time)
                 
                 # ** เรียกใช้ฟังก์ชันตัดคำแบบใหม่ (ตั้งไว้ที่ 8 คำ) **
-                formatted_text = split_thai_text_by_words(text.strip(), max_words=6)
+                formatted_text = split_thai_text_by_words(text.strip())
                 
                 srt_content += f"{i}\n{start_str} --> {end_str}\n{formatted_text}\n\n"
             
