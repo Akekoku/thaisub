@@ -2,7 +2,6 @@ import streamlit as st
 from groq import Groq
 import subprocess
 import os
-import json
 from pythainlp.tokenize import word_tokenize
 from PIL import ImageFont
 
@@ -25,7 +24,6 @@ def format_timestamp(seconds):
     millis = int(round((seconds - int(seconds)) * 1000))
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
-# รับค่า pil_font_size ที่ถูกขยายสเกลแล้วมาใช้งาน
 def split_text_by_pixel_width(text, font_file, pil_font_size, max_width_pixels):
     try:
         font = ImageFont.truetype(font_file, pil_font_size)
@@ -52,22 +50,23 @@ def split_text_by_pixel_width(text, font_file, pil_font_size, max_width_pixels):
         
     return "\n".join(lines)
 
-# 🌟 ฟังก์ชันอัปเดต: ดึงทั้งความกว้างและความสูงของวิดีโอมาเลย
+# 🌟 ฟังก์ชันที่แก้ไขแล้ว: ดึงขนาดวิดีโอแบบเสถียรที่สุด ป้องกัน Error บนเซิร์ฟเวอร์
 def get_video_dimensions(video_path):
     try:
         cmd = [
             'ffprobe', '-v', 'error', 
             '-select_streams', 'v:0', 
             '-show_entries', 'stream=width,height', 
-            '-of', 'json'
+            '-of', 'csv=s=x:p=0',
+            video_path
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        data = json.loads(result.stdout)
-        width = data['streams'][0]['width']
-        height = data['streams'][0]['height']
-        return width, height
+        # ผลลัพธ์จะออกมาเป็นข้อความ "720x1280" แล้วจับแยกเป็นกว้าง-สูง
+        width_str, height_str = result.stdout.strip().split('x')
+        return int(width_str), int(height_str)
     except Exception:
-        return 1080, 1920  # ค่าสำรองสำหรับวิดีโอแนวตั้ง
+        # หากตรวจไม่ได้จริงๆ ให้ใช้ 720x1280 เป็นค่าสำรองมาตรฐานของคลิปแนวตั้ง
+        return 720, 1280
 
 st.set_page_config(page_title="AI Subtitle Bounding Box Pro", page_icon="🎬")
 st.title("🎬 ระบบฝังซับอัตโนมัติด้วยการวัดความกว้างพิกเซล")
@@ -101,11 +100,11 @@ if uploaded_file and api_key:
             with open("input.mp4", "wb") as f:
                 f.write(uploaded_file.getbuffer())
         
-        # 🌟 ดึงทั้งกว้างและสูงมาใช้
+        # ค้นหาขนาดพิกเซลจริงของวิดีโอ
         video_width, video_height = get_video_dimensions("input.mp4")
         allowed_pixel_width = video_width * (max_width_pct / 100)
         
-        # 🌟 สมการแปลงสเกลฟอนต์! (เทียบกับสเกลมาตรฐาน 288 ของ FFmpeg Subtitles)
+        # สมการแปลงสเกลฟอนต์ให้ตรงกับสายตา FFmpeg
         actual_pil_font_size = int((font_size_choice / 288) * video_height)
         
         st.info(f"📹 วิดีโอขนาด {video_width}x{video_height}px | กางกรอบกว้าง {int(allowed_pixel_width)}px")
@@ -137,7 +136,7 @@ if uploaded_file and api_key:
                 end_time = segment['end'] if isinstance(segment, dict) else getattr(segment, 'end')
                 text = segment['text'] if isinstance(segment, dict) else getattr(segment, 'text')
                 
-                # โยนขนาดพิกเซลที่คำนวณสเกลแล้วเข้าไปตัดคำ
+                # นำขนาดพิกเซลไปหั่นประโยค
                 formatted_text = split_text_by_pixel_width(
                     text.strip(), 
                     font_file=actual_font_file, 
