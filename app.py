@@ -107,11 +107,11 @@ if uploaded_file and api_key:
             if os.path.exists("output.mp4"):
                 os.remove("output.mp4")
             
-            font_name = "Kanit Medium"
+            font_name = "Noto Sans Thai Medium"
             if font_weight_choice == "Regular":
-                font_name = "Kanit"
+                font_name = "Noto Sans Thai"
             elif font_weight_choice == "Bold":
-                font_name = "Kanit Bold"
+                font_name = "Noto Sans Thai Bold"
                 
             cmd = [
                 'ffmpeg', '-y',
