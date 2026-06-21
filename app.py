@@ -17,13 +17,11 @@ FONT_MAP = {
     "Mali": "Mali.ttf"
 }
 
-# ฟังก์ชันแปลงโค้ดสี Hex (#FFFFFF) ให้เป็นรูปแบบ BGR ของ FFmpeg (AABBGGRR)
 def hex_to_ass_color(hex_str, is_opaque=True):
     hex_str = hex_str.lstrip('#')
     r = hex_str[0:2]
     g = hex_str[2:4]
     b = hex_str[4:6]
-    # เอามาเรียงใหม่เป็น Blue-Green-Red และเติมความทึบแสง (00 คือทึบ 100% สำหรับ ASS)
     alpha = "00" if is_opaque else "00"
     return f"&H{alpha}{b}{g}{r}"
 
@@ -87,17 +85,26 @@ else:
     st.error("❌ ยังไม่ได้ตั้งค่าล็อก API Key ในระบบ Secrets")
     st.stop()
 
+# =========================================================
+# 🌟 เมนูใหม่: เลือกว่าจะถอดเสียงเป็นภาษาไทย หรือ แปลเป็นอังกฤษ
+# =========================================================
+st.markdown("### 🌐 เลือกภาษาของซับไตเติล")
+sub_language = st.radio(
+    "ระบบ AI ต้องการให้ฝังซับไตเติลเป็นภาษาอะไร?",
+    ["🇹🇭 ภาษาไทย (ถอดจากเสียงพูดต้นฉบับ)", "🇬🇧 ภาษาอังกฤษ (แปลอัตโนมัติจากเสียงพูด)"],
+    horizontal=True
+)
+
 st.markdown("### 🛠️ ปรับแต่งสไตล์ซับไตเติล")
 with st.expander("คลิกเพื่อเปิดเครื่องมือปรับแต่งตัวอักษร สี และกรอบ Safe Zone", expanded=True):
     font_choice = st.selectbox("✒️ เลือกรูปแบบฟอนต์ที่คุณต้องการ:", list(FONT_MAP.keys()), index=8)
     
-    # 🌟 เพิ่มระบบเลือกสีตัวหนังสือและสไตล์พื้นหลัง
     st.markdown("#### 🎨 ปรับแต่งสีและลูกเล่น")
     c1, c2, c3 = st.columns(3)
     with c1:
-        text_color = st.color_picker("🅰️ สีตัวอักษร", "#FFFFFF") # เริ่มต้นสีขาว
+        text_color = st.color_picker("🅰️ สีตัวอักษร", "#FFFFFF")
     with c2:
-        outline_color = st.color_picker("🖍️ สีของขอบตัวอักษร", "#000000") # เริ่มต้นสีดำ
+        outline_color = st.color_picker("🖍️ สีของขอบตัวอักษร", "#000000")
     with c3:
         bg_style = st.selectbox("🔲 สไตล์พื้นหลัง", ["ขอบปกติ (Outline)", "แถบกล่องดำรองหลัง (Box)"])
 
@@ -124,7 +131,6 @@ if uploaded_file and api_key:
         video_width, video_height = get_video_dimensions("input.mp4")
         allowed_pixel_width = video_width * (max_width_pct / 100)
         
-        # ปรับสมการชดเชยความกว้างของฟอนต์ Mali ให้สมดุล
         actual_pil_font_size = int((font_size_choice / 288) * video_height * 0.75)
         
         st.info(f"📹 วิดีโอขนาด {video_width}x{video_height}px | กางกรอบกว้าง {int(allowed_pixel_width)}px")
@@ -138,20 +144,30 @@ if uploaded_file and api_key:
             st.error("เกิดข้อผิดพลาดในการสกัดไฟล์เสียง")
             st.stop()
 
-        st.info("🎙️ ขั้นตอนที่ 1: กำลังส่งเสียงให้ AI ถอดเป็นซับภาษาไทย...")
+        st.info(f"🎙️ ขั้นตอนที่ 1: กำลังส่งเสียงให้ AI ประมวลผลเป็น {sub_language.split(' ')[1]}...")
         try:
             with open("audio.mp3", "rb") as audio_file:
-                transcription = client.audio.transcriptions.create(
-                    model="whisper-large-v3",
-                    file=("audio.mp3", audio_file),
-                    response_format="verbose_json", 
-                    language="th"
-                )
+                # 🌟 สลับการใช้ API ตามภาษาที่เลือก
+                if "ภาษาไทย" in sub_language:
+                    # โหมดถอดเสียงปกติ (Transcriptions)
+                    response = client.audio.transcriptions.create(
+                        model="whisper-large-v3",
+                        file=("audio.mp3", audio_file),
+                        response_format="verbose_json", 
+                        language="th"
+                    )
+                else:
+                    # โหมดแปลภาษาอังกฤษ (Translations)
+                    response = client.audio.translations.create(
+                        model="whisper-large-v3",
+                        file=("audio.mp3", audio_file),
+                        response_format="verbose_json"
+                    )
             
             srt_content = ""
             actual_font_file = FONT_MAP[font_choice]
             
-            for i, segment in enumerate(transcription.segments, start=1):
+            for i, segment in enumerate(response.segments, start=1):
                 start_time = segment['start'] if isinstance(segment, dict) else getattr(segment, 'start')
                 end_time = segment['end'] if isinstance(segment, dict) else getattr(segment, 'end')
                 text = segment['text'] if isinstance(segment, dict) else getattr(segment, 'text')
@@ -166,7 +182,7 @@ if uploaded_file and api_key:
             
             with open("subs.srt", "w", encoding="utf-8") as f:
                 f.write(srt_content)
-            st.success("ถอดเสียงและสร้างไฟล์ SRT สำเร็จ!")
+            st.success("ประมวลผลเสียงและสร้างไฟล์ SRT สำเร็จ!")
             
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาดจาก Groq API: {e}")
@@ -177,11 +193,8 @@ if uploaded_file and api_key:
             if os.path.exists("output.mp4"):
                 os.remove("output.mp4")
             
-            # แปลงสีที่เลือกจากหน้าเว็บไปใช้ในระบบ FFmpeg
             primary_color_ass = hex_to_ass_color(text_color)
             outline_color_ass = hex_to_ass_color(outline_color)
-            
-            # เช็กว่าเลือกขอบธรรมดา หรือ เลือกแบบแถบกล่องดำรองหลัง (BorderStyle=3 คือทำกล่องดำทับ)
             border_style = "1" if bg_style == "ขอบปกติ (Outline)" else "3"
                 
             cmd = [
