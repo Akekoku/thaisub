@@ -84,9 +84,9 @@ if uploaded_file and api_key:
                 os.remove("output.mp4")
                 
             cmd = [
-                'ffmpeg', '-y',
+               'ffmpeg', '-y',
                 '-i', 'input.mp4',
-                '-vf', 'subtitles=subs.srt',
+                '-vf', "subtitles=subs.srt:fontsdir=.:force_style='Fontname=Kanit Medium,FontSize=20'",
                 '-c:a', 'copy', 
                 'output.mp4'
             ]
