@@ -4,7 +4,6 @@ import subprocess
 import os
 from pythainlp.tokenize import word_tokenize
 
-# 1. ฟังก์ชันแปลงเวลาสำหรับไฟล์ SRT
 def format_timestamp(seconds):
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
@@ -12,37 +11,47 @@ def format_timestamp(seconds):
     millis = int(round((seconds - int(seconds)) * 1000))
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
-# 2. ฟังก์ชันตัดคำภาษาไทยตามจำนวนคำที่เลือกจากเมนู
-def split_thai_text_by_words(text, max_words=6):
+# 🌟 อัปเดตฟังก์ชันตัดคำ ให้สามารถแทรก "บรรทัดล่องหน" เพื่อถ่างระยะบรรทัดได้
+def split_thai_text_by_words(text, max_words=6, gap_size=10, default_fs=22):
     words = word_tokenize(text, engine='newmm')
-    
     lines = []
     for i in range(0, len(words), max_words):
         line = "".join(words[i:i+max_words])
         lines.append(line)
+        
+    # ถ้าตั้งค่าระยะห่างมากกว่า 0 ให้แทรกโค้ดปรับขนาดฟอนต์คั่นกลาง
+    if gap_size > 0:
+        # {\fs10} คือปรับฟอนต์ให้เล็กเพื่อทำช่องว่าง แล้วค่อยคืนค่ากลับเป็นฟอนต์ขนาดปกติ
+        spacer = f"\n{{\\fs{gap_size}}} \n{{\\fs{default_fs}}}"
+        return spacer.join(lines)
+        
     return "\n".join(lines)
 
 st.set_page_config(page_title="AI Subtitle Burner Pro", page_icon="🎬")
-st.title("🎬 ระบบอัปโหลดวีดีโอและฝังซับอัตโนมัติ (Groq API)")
+st.title("🎬 ระบบอัปโหลดวีดีโอและฝังซับอัตโนมัติ")
 
-# =========================================================
-# 🔒 ส่วนที่อัปเดตใหม่: ดึง API Key จากระบบล็อกหลังบ้าน (Secrets)
-# =========================================================
 if "GROQ_API_KEY" in st.secrets:
     api_key = st.secrets["GROQ_API_KEY"]
 else:
-    st.error("❌ ยังไม่ได้ตั้งค่าล็อก API Key ในระบบ Secrets ของ Streamlit Cloud! (โปรดตั้งค่าตามขั้นตอน)")
+    st.error("❌ ยังไม่ได้ตั้งค่าล็อก API Key ในระบบ Secrets ของ Streamlit Cloud!")
     st.stop()
 
-# ปรับแต่งสไตล์ซับไตเติล
 st.markdown("### 🛠️ ปรับแต่งสไตล์ซับไตเติล")
 with st.expander("คลิกเพื่อเปิดเครื่องมือปรับแต่งตัวอักษรและการตัดคำ", expanded=True):
     max_words_choice = st.selectbox("🔤 จำนวนคำสูงสุดต่อ 1 บรรทัด:", [5, 6, 7, 8], index=1)
-    font_weight_choice = st.selectbox("✒️ เลือกความหนาของฟอนต์ (Kanit):", ["Regular", "Medium", "Bold"], index=1)
-    font_size_choice = st.slider("📏 ขนาดตัวอักษร (FontSize):", min_value=14, max_value=40, value=22)
+    
+    # เลือกระหว่าง Kanit หรือ Noto Sans Thai (ใช้ได้ทั้งคู่แล้วแต่คุณมีไฟล์ไหน)
+    font_weight_choice = st.selectbox("✒️ เลือกความหนาของฟอนต์:", ["Regular", "Medium", "Bold"], index=1)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        font_size_choice = st.slider("📏 ขนาดตัวอักษร (FontSize):", min_value=14, max_value=40, value=24)
+    with col2:
+        # 🌟 สไลเดอร์ใหม่! เอาไว้ถ่างระยะห่างระหว่างบรรทัดให้ไม่ซ้อนกัน
+        line_gap_choice = st.slider("↕️ ระยะห่างระหว่างบรรทัด (Line Gap):", min_value=0, max_value=30, value=12)
+        
     margin_v_choice = st.slider("🔼 ระดับความสูงของซับจากขอบล่าง (MarginV):", min_value=20, max_value=200, value=60)
 
-# ส่วนของการอัปโหลดไฟล์วีดีโอ
 uploaded_file = st.file_uploader("📂 เลือกไฟล์วีดีโอ (MP4)", type=["mp4"])
 
 if uploaded_file and api_key:
@@ -57,13 +66,7 @@ if uploaded_file and api_key:
         try:
             if os.path.exists("audio.mp3"):
                 os.remove("audio.mp3")
-            
-            subprocess.run([
-                'ffmpeg', '-y', '-i', 'input.mp4', 
-                '-vn', 
-                '-c:a', 'libmp3lame', '-b:a', '64k', 
-                'audio.mp3'
-            ], check=True)
+            subprocess.run(['ffmpeg', '-y', '-i', 'input.mp4', '-vn', '-c:a', 'libmp3lame', '-b:a', '64k', 'audio.mp3'], check=True)
         except subprocess.CalledProcessError:
             st.error("เกิดข้อผิดพลาดในการสกัดไฟล์เสียง")
             st.stop()
@@ -79,23 +82,23 @@ if uploaded_file and api_key:
                 )
             
             srt_content = ""
-            segments = transcription.segments
-            
-            for i, segment in enumerate(segments, start=1):
-                start_time = segment.start if hasattr(segment, 'start') else segment['start']
-                end_time = segment.end if hasattr(segment, 'end') else segment['end']
-                text = segment.text if hasattr(segment, 'text') else segment['text']
+            for i, segment in enumerate(transcription.segments, start=1):
+                start_time = segment['start'] if isinstance(segment, dict) else getattr(segment, 'start')
+                end_time = segment['end'] if isinstance(segment, dict) else getattr(segment, 'end')
+                text = segment['text'] if isinstance(segment, dict) else getattr(segment, 'text')
                 
-                start_str = format_timestamp(start_time)
-                end_str = format_timestamp(end_time)
+                # ส่งค่าระยะห่างบรรทัด (Line Gap) เข้าไปช่วยตัดคำ
+                formatted_text = split_thai_text_by_words(
+                    text.strip(), 
+                    max_words=max_words_choice, 
+                    gap_size=line_gap_choice, 
+                    default_fs=font_size_choice
+                )
                 
-                formatted_text = split_thai_text_by_words(text.strip(), max_words=max_words_choice)
-                
-                srt_content += f"{i}\n{start_str} --> {end_str}\n{formatted_text}\n\n"
+                srt_content += f"{i}\n{format_timestamp(start_time)} --> {format_timestamp(end_time)}\n{formatted_text}\n\n"
             
             with open("subs.srt", "w", encoding="utf-8") as f:
                 f.write(srt_content)
-                
             st.success("ถอดเสียงและสร้างไฟล์ SRT สำเร็จ!")
             
         except Exception as e:
@@ -107,11 +110,9 @@ if uploaded_file and api_key:
             if os.path.exists("output.mp4"):
                 os.remove("output.mp4")
             
-            font_name = "Noto Sans Thai Medium"
-            if font_weight_choice == "Regular":
-                font_name = "Noto Sans Thai"
-            elif font_weight_choice == "Bold":
-                font_name = "Noto Sans Thai Bold"
+            font_name = "Kanit Medium" # หรือเปลี่ยนเป็น Noto Sans Thai ตามที่คุณมีไฟล์
+            if font_weight_choice == "Regular": font_name = "Kanit"
+            elif font_weight_choice == "Bold": font_name = "Kanit Bold"
                 
             cmd = [
                 'ffmpeg', '-y',
@@ -125,12 +126,7 @@ if uploaded_file and api_key:
             st.success("🎉 ฝังซับไตเติลลงวีดีโอเรียบร้อยแล้ว!")
             
             with open("output.mp4", "rb") as file:
-                st.download_button(
-                    label="📥 ดาวน์โหลดวีดีโอพร้อมซับไตเติล",
-                    data=file,
-                    file_name="video_with_subtitles.mp4",
-                    mime="video/mp4"
-                )
+                st.download_button(label="📥 ดาวน์โหลดวีดีโอพร้อมซับไตเติล", data=file, file_name="video_with_subtitles.mp4", mime="video/mp4")
                 
         except subprocess.CalledProcessError:
             st.error("เกิดข้อผิดพลาดในการประมวลผลวีดีโอด้วย FFmpeg")
@@ -138,4 +134,3 @@ if uploaded_file and api_key:
             for temp_file in ["input.mp4", "audio.mp3", "subs.srt"]:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
-                    
