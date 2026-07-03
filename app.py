@@ -114,31 +114,31 @@ def fetch_pexels_video(keyword, pexels_key, output_path):
         pass
     return False
 
-# 🌟 ฟังก์ชันหาคีย์เวิร์ดฉบับอัปเกรด (คุมโทนภาพสารคดี และสกัดภาพคนออก)
+# 🌟 ฟังก์ชันหาคีย์เวิร์ดฉบับอัปเกรด (เน้นวัตถุตรงตามเนื้อเรื่อง + ห้ามมีคน)
 def get_english_keyword_from_ai(client, thai_text):
     try:
-        # อัปเกรด Prompt ให้สวมบทบาทเป็นผู้กำกับภาพ B-Roll
+        # ดึงสติ AI ให้เน้นวัตถุที่มีอยู่จริงในประโยค
         prompt = f"""
-        You are an expert video director selecting b-roll footage for a faceless documentary.
+        You are a video editor selecting b-roll footage for a documentary.
         Based on this Thai text: '{thai_text}'
-        Provide 1 to 2 English search keywords for a stock video site.
+        Extract exactly 1 to 2 English search keywords for a stock video site.
         Strict Rules:
-        1. Focus on objects, nature, landscapes, vintage items, or abstract concepts.
-        2. Strictly NO crowds, NO faces, NO people looking at camera. (Must be Faceless)
-        3. Make it cinematic and atmospheric.
+        1. PRIORITIZE LITERAL OBJECTS: If the text mentions specific items (e.g., refrigerator, ice, salt, food, factory, machine, cold), you MUST use those exact nouns as keywords.
+        2. STRICTLY NO PEOPLE: No faces, no crowds. The footage must be faceless.
+        3. Only if the text is completely abstract with no objects, use general terms like "vintage background" or "cinematic texture".
         4. Reply with ONLY the keywords. No punctuation, no explanation.
         """
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama3-8b-8192",
-            temperature=0.3 # ลดความแกว่งของคำตอบ ให้ AI ตอบเป๊ะขึ้น
+            temperature=0.1 # ปรับให้ต่ำลงสุดๆ เพื่อให้ AI เลิกจินตนาการ และตอบแบบตรงไปตรงมา
         )
-        time.sleep(2.5) # ⏱️ เบรกพัก 2.5 วินาที เพื่อไม่ให้ Groq API โดนตัด
+        time.sleep(2.5) # ⏱️ เบรกพัก 2.5 วินาที
         return chat_completion.choices[0].message.content.strip().replace('"', '')
     except Exception:
         time.sleep(2.5)
-        # สุ่มคีย์เวิร์ดสำรองที่เป็นแนว Faceless B-roll
-        fallback_keywords = ["cinematic landscape", "abstract background", "vintage texture", "empty scenery", "nature environment", "dark cinematic"]
+        # สุ่มคีย์เวิร์ดสำรองที่เน้นวัตถุแบบกว้างๆ
+        fallback_keywords = ["ice block", "vintage machine", "close up texture", "historical object", "cold environment"]
         return random.choice(fallback_keywords)
 
 st.set_page_config(page_title="AI Auto-Edit & Subtitle Pro", page_icon="🎬")
