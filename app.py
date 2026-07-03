@@ -21,6 +21,33 @@ FONT_MAP = {
     "Mali": "Mali.ttf"
 }
 
+# =========================================================
+# 🔒 ระบบดักรหัสผ่านความปลอดภัยสูง (Gatekeeper Authentication)
+# =========================================================
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    st.set_page_config(page_title="🔒กรุณาล็อกอิน", page_icon="🔑")
+    st.markdown("## 🔐 ระบบภายในส่วนตัว (Restricted Access)")
+    st.write("แอปพลิเคชันนี้จำกัดสิทธิ์การเข้าถึงเฉพาะเจ้าของบัญชีเท่านั้น")
+    
+    # ช่องกรอกรหัสผ่าน
+    user_password = st.text_input("🔑 กรุณากรอกรหัสผ่านเพื่อเข้าใช้งาน:", type="password")
+    
+    if st.button("🔓 เข้าสู่ระบบ (Login)"):
+        # ดึงรหัสผ่านที่เราตั้งไว้ในระบบ Secrets (ถ้าลืมตั้งจะใช้ค่าเริ่มต้นคือ 12345)
+        correct_password = st.secrets.get("APP_PASSWORD", "12345")
+        
+        if user_password == correct_password:
+            st.session_state["authenticated"] = True
+            st.rerun() # รีเฟรชหน้าเว็บเพื่อเข้าสู่แอปจริง
+        else:
+            st.error("❌ รหัสผ่านไม่ถูกต้อง! กรุณาตรวจสอบใหม่อีกครั้ง")
+            
+    st.stop() # 🛑 บล็อกโค้ดทั้งหมดด้านล่างไว้ ไม่ให้คนที่ไม่รู้รหัสผ่านมองเห็น
+# =========================================================
+
 def hex_to_ass_color(hex_str, alpha_hex="00"):
     hex_str = hex_str.lstrip('#')
     r = hex_str[0:2]
@@ -296,9 +323,6 @@ if uploaded_file and api_key:
                 f.write(ass_content)
             st.success("สร้างไฟล์ซับไตเติลสำเร็จ!")
             
-            # =========================================================
-            # 🌟 จุดที่แก้ไข: ใช้ Python เรียก edge-tts โดยตรง (ตัดปัญหา Path)
-            # =========================================================
             if enable_dubbing and "ภาษาอังกฤษ" in sub_language:
                 st.info("🗣️ กำลังให้ AI (Edge TTS) สร้างเสียงพากย์ภาษาอังกฤษ...")
                 if os.path.exists("dubbed_audio.mp3"):
@@ -308,7 +332,6 @@ if uploaded_file and api_key:
                     communicate = edge_tts.Communicate(full_translated_text, "en-US-GuyNeural")
                     await communicate.save("dubbed_audio.mp3")
                 
-                # สั่งรันฟังก์ชันแบบไม่พึ่งพา Command line
                 asyncio.run(generate_dub())
                 st.success("สร้างเสียงพากย์สำเร็จ!")
 
