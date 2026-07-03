@@ -41,11 +41,9 @@ def split_text_by_pixel_width(text, font_file, pil_font_size, max_width_pixels):
         font = ImageFont.truetype(font_file, pil_font_size)
     except Exception:
         return text
-
     words = word_tokenize(text, engine='newmm')
     lines = []
     current_line = ""
-    
     for word in words:
         test_line = current_line + word
         if hasattr(font, 'getlength'):
@@ -59,10 +57,8 @@ def split_text_by_pixel_width(text, font_file, pil_font_size, max_width_pixels):
             current_line = word
         else:
             current_line = test_line
-            
     if current_line:
         lines.append(current_line)
-        
     return "\n".join(lines)
 
 def get_video_dimensions(video_path):
@@ -80,19 +76,14 @@ def get_video_dimensions(video_path):
     except Exception:
         return 720, 1280
 
-# =========================================================
-# 🌟 ฟังก์ชันใหม่: ตรวจจับและตัดช่วงเงียบ (Dead Air Removal)
-# =========================================================
 def cut_dead_air(input_file, output_file, silence_thresh="-35dB", silence_duration=0.5):
     st.info("🔍 ขั้นตอน AI ตัดต่อ: กำลังสแกนหาช่วงเวลา Dead Air ในวิดีโอ...")
-    
     cmd_detect = [
         'ffmpeg', '-i', input_file,
         '-af', f'silencedetect=noise={silence_thresh}:d={silence_duration}',
         '-f', 'null', '-'
     ]
     result = subprocess.run(cmd_detect, stderr=subprocess.PIPE, text=True)
-
     starts = re.findall(r'silence_start: ([\d\.]+)', result.stderr)
     ends = re.findall(r'silence_end: ([\d\.]+)', result.stderr)
 
@@ -108,13 +99,10 @@ def cut_dead_air(input_file, output_file, silence_thresh="-35dB", silence_durati
     keep_segments = []
     current_time = 0.0
 
-    # คำนวณช่วงเวลาที่มีเสียงพูด (ช่วงที่ต้องเก็บไว้)
     for i in range(len(starts)):
         start = float(starts[i])
         end = float(ends[i]) if i < len(ends) else total_duration
-
         if start > current_time:
-            # เพิ่ม Padding หัวท้ายนิดนึงเพื่อไม่ให้ตัดกระชากเสียงหายใจ
             pad_start = current_time
             pad_end = start + 0.1 if start + 0.1 < total_duration else start
             keep_segments.append((pad_start, pad_end))
@@ -124,8 +112,6 @@ def cut_dead_air(input_file, output_file, silence_thresh="-35dB", silence_durati
         keep_segments.append((current_time, total_duration))
 
     st.warning(f"✂️ พบช่วง Dead Air {len(starts)} จุด! กำลังลบและบีบอัดวิดีโอให้กระชับ...")
-
-    # นำช่วงที่เก็บไว้มาต่อกันผ่าน FFmpeg Filter Complex
     filter_str = ""
     concat_inputs = ""
     for i, (start, end) in enumerate(keep_segments):
@@ -134,7 +120,6 @@ def cut_dead_air(input_file, output_file, silence_thresh="-35dB", silence_durati
         concat_inputs += f"[v{i}][a{i}]"
 
     filter_str += f"{concat_inputs}concat=n={len(keep_segments)}:v=1:a=1[outv][outa]"
-
     cmd_run = [
         'ffmpeg', '-y', '-i', input_file,
         '-filter_complex', filter_str,
@@ -145,9 +130,7 @@ def cut_dead_air(input_file, output_file, silence_thresh="-35dB", silence_durati
     subprocess.run(cmd_run, check=True)
     st.success("✨ ตัดช่วงเงียบสำเร็จ ได้ไฟล์วิดีโอ Rough Cut ที่กระชับแล้ว!")
 
-# =========================================================
-
-st.set_page_config(page_title="AI Subtitle & Auto-Edit Pro", page_icon="🎬")
+st.set_page_config(page_title="AI Auto-Edit & Subtitle Pro", page_icon="🎬")
 st.markdown("## 🎬 ระบบ AI ตัดต่ออัตโนมัติ & ฝังซับ (Pro)")
 
 if "GROQ_API_KEY" in st.secrets:
@@ -156,17 +139,28 @@ else:
     st.error("❌ ยังไม่ได้ตั้งค่าล็อก API Key ในระบบ Secrets")
     st.stop()
 
-# 🌟 เมนูใหม่: แผงควบคุมระบบ AI ตัดต่อช่วงเงียบ
 st.markdown("### ✂️ ระบบ AI ตัดต่ออัตโนมัติ (Rough Cut)")
 enable_dead_air = st.toggle("🔇 เปิดระบบตรวจจับและตัดช่วงเงียบ (Dead Air Removal)", value=False)
 if enable_dead_air:
     st.caption("ปรับตั้งค่าความไวของการตรวจจับเสียงเงียบ")
     col_d1, col_d2 = st.columns(2)
     with col_d1:
-        silence_thresh_val = st.slider("ระดับเสียงที่ถือว่าเงียบ (dB)", min_value=-50, max_value=-10, value=-35, step=5, help="เช่น -35dB ยิ่งติดลบเยอะ วิดีโอต้องเงียบสนิทจริงๆ ถึงจะตัด")
+        silence_thresh_val = st.slider("ระดับเสียงที่ถือว่าเงียบ (dB)", min_value=-50, max_value=-10, value=-35, step=5)
         silence_thresh = f"{silence_thresh_val}dB"
     with col_d2:
-        silence_duration = st.slider("ระยะเวลาเงียบขั้นต่ำ (วินาที)", min_value=0.2, max_value=2.0, value=0.5, step=0.1, help="ถ้าคลิปเงียบนานกว่าตัวเลขนี้ ระบบจะตัดทิ้งทันที")
+        silence_duration = st.slider("ระยะเวลาเงียบขั้นต่ำ (วินาที)", min_value=0.2, max_value=2.0, value=0.5, step=0.1)
+
+# =========================================================
+# 🌟 เมนูใหม่: แผงควบคุมระบบกรองคำฟุ่มเฟือย (Filler Words)
+# =========================================================
+enable_filler_removal = st.toggle("🧹 เปิดระบบล้างคำฟุ่มเฟือยในซับไตเติล (Auto-Clean Text)", value=True)
+if enable_filler_removal:
+    filler_words_input = st.text_input(
+        "📝 กำหนดคำขยะที่ต้องการให้ AI ลบออก (คั่นด้วยลูกน้ำ)", 
+        value="เอ่อ, อ่า, อืม, แบบว่า, คือแบบ"
+    )
+    # ตัดช่องว่างและสร้างเป็น List ไว้รอประมวลผล
+    filler_words_list = [w.strip() for w in filler_words_input.split(',') if w.strip()]
 
 st.markdown("### 🌐 เลือกภาษาของซับไตเติล")
 sub_language = st.radio(
@@ -228,7 +222,6 @@ if uploaded_file and api_key:
             with open("raw_upload.mp4", "wb") as f:
                 f.write(uploaded_file.getbuffer())
         
-        # 🌟 เช็กว่าเปิดระบบตัด Dead Air หรือไม่
         if enable_dead_air:
             cut_dead_air("raw_upload.mp4", "input.mp4", silence_thresh, silence_duration)
         else:
@@ -247,7 +240,7 @@ if uploaded_file and api_key:
             st.error("เกิดข้อผิดพลาดในการสกัดไฟล์เสียง")
             st.stop()
 
-        st.info(f"🎙️ กำลังให้ AI ประมวลผลซับไตเติล...")
+        st.info(f"🎙️ กำลังให้ AI ประมวลผลและทำความสะอาดซับไตเติล...")
         try:
             with open("audio.mp3", "rb") as audio_file:
                 if "ภาษาไทย" in sub_language:
@@ -288,8 +281,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 end_time = segment['end'] if isinstance(segment, dict) else getattr(segment, 'end')
                 text = segment['text'] if isinstance(segment, dict) else getattr(segment, 'text')
                 
+                # =========================================================
+                # 🌟 ทำความสะอาดข้อความ: กวาดล้างคำขยะที่ระบุไว้
+                # =========================================================
+                clean_text = text.strip()
+                if enable_filler_removal and "ภาษาไทย" in sub_language:
+                    for filler in filler_words_list:
+                        # แทนที่คำฟุ่มเฟือยด้วยช่องว่าง แล้วจัดรูปประโยคใหม่
+                        clean_text = re.sub(rf'\b{filler}\b', '', clean_text)
+                        clean_text = clean_text.replace(filler, '')
+                    
+                    # ลบช่องว่างส่วนเกินที่เกิดจากการดึงคำออก
+                    clean_text = " ".join(clean_text.split())
+                
+                # ถ้าประโยคนี้เหลือแต่ความว่างเปล่า (เพราะพูดแค่ เอ่อ อ่า) ให้ข้ามไปเลย ไม่ต้องฝังซับ
+                if not clean_text:
+                    continue
+
                 formatted_text = split_text_by_pixel_width(
-                    text.strip(), font_file=actual_font_file, pil_font_size=actual_pil_font_size, max_width_pixels=allowed_pixel_width
+                    clean_text, font_file=actual_font_file, pil_font_size=actual_pil_font_size, max_width_pixels=allowed_pixel_width
                 )
                 
                 formatted_text_ass = formatted_text.replace("\n", "\\N")
@@ -310,7 +320,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             
             with open("subs.ass", "w", encoding="utf-8") as f:
                 f.write(ass_content)
-            st.success("สร้างไฟล์ซับไตเติลสำเร็จ!")
+            st.success("ทำความสะอาดข้อความและสร้างไฟล์ซับไตเติลสำเร็จ!")
             
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาดจาก Groq API: {e}")
@@ -344,4 +354,4 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             for temp_file in ["raw_upload.mp4", "input.mp4", "audio.mp3", "subs.ass"]:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
-        
+    
