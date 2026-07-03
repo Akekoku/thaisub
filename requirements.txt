@@ -2,3 +2,4 @@ streamlit
 groq
 pythainlp
 Pillow
+edge-tts
