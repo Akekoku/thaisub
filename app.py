@@ -32,20 +32,16 @@ if not st.session_state["authenticated"]:
     st.markdown("## 🔐 ระบบภายในส่วนตัว (Restricted Access)")
     st.write("แอปพลิเคชันนี้จำกัดสิทธิ์การเข้าถึงเฉพาะเจ้าของบัญชีเท่านั้น")
     
-    # ช่องกรอกรหัสผ่าน
     user_password = st.text_input("🔑 กรุณากรอกรหัสผ่านเพื่อเข้าใช้งาน:", type="password")
     
     if st.button("🔓 เข้าสู่ระบบ (Login)"):
-        # ดึงรหัสผ่านที่เราตั้งไว้ในระบบ Secrets (ถ้าลืมตั้งจะใช้ค่าเริ่มต้นคือ 12345)
         correct_password = st.secrets.get("APP_PASSWORD", "12345")
-        
         if user_password == correct_password:
             st.session_state["authenticated"] = True
-            st.rerun() # รีเฟรชหน้าเว็บเพื่อเข้าสู่แอปจริง
+            st.rerun()
         else:
             st.error("❌ รหัสผ่านไม่ถูกต้อง! กรุณาตรวจสอบใหม่อีกครั้ง")
-            
-    st.stop() # 🛑 บล็อกโค้ดทั้งหมดด้านล่างไว้ ไม่ให้คนที่ไม่รู้รหัสผ่านมองเห็น
+    st.stop()
 # =========================================================
 
 def hex_to_ass_color(hex_str, alpha_hex="00"):
@@ -188,12 +184,23 @@ sub_language = st.radio(
     horizontal=True
 )
 
+# =========================================================
+# 🌟 เมนูอัปเกรด V.2: ระบบพากย์เสียงแยกประโยค + เลือกสไตล์เสียง
+# =========================================================
 enable_dubbing = False
+selected_voice = "en-US-JennyNeural"
 if "ภาษาอังกฤษ" in sub_language:
-    st.markdown("### 🎙️ ระบบพากย์เสียงอัตโนมัติ (Auto-Dubbing)")
-    enable_dubbing = st.toggle("🎧 เปิดใช้งานเสียงพากย์ AI ฝรั่ง (แทนที่เสียงต้นฉบับ)", value=False)
+    st.markdown("### 🎙️ ระบบพากย์เสียงอัตโนมัติ (Auto-Dubbing V.2 Pro)")
+    enable_dubbing = st.toggle("🎧 เปิดใช้งานเสียงพากย์ AI ฝรั่ง (วางตำแหน่งตรงตามจังหวะพูดเป๊ะ)", value=False)
     if enable_dubbing:
-        st.caption("✨ ระบบจะนำข้อความที่แปลแล้ว ไปสร้างเสียงมนุษย์ AI และฝังลงในคลิปแทนเสียงเดิม")
+        voice_labels = {
+            "👩 เสียงผู้หญิง - ร่าเริง สดใส ตลาดคลิปสั้น (Jenny)": "en-US-JennyNeural",
+            "👩 เสียงผู้หญิง - นุ่มนวล น่าเชื่อถือ (Aria)": "en-US-AriaNeural",
+            "👨 เสียงผู้ชาย - อบอุ่น เป็นธรรมชาติ (Guy)": "en-US-GuyNeural",
+            "👨 เสียงผู้ชาย - เข้ม ทรงพลัง ดุดัน (Brian)": "en-US-BrianNeural"
+        }
+        voice_choice = st.selectbox("👤 เลือกสไตล์และเพศของนักพากย์ AI:", list(voice_labels.keys()), index=0)
+        selected_voice = voice_labels[voice_choice]
 
 st.markdown("### 🛠️ ปรับแต่งสไตล์ซับไตเติล")
 with st.expander("คลิกเพื่อเปิดเครื่องมือปรับแต่งตัวอักษร สี และเอฟเฟกต์", expanded=True):
@@ -274,7 +281,9 @@ if uploaded_file and api_key:
             ass_content = f"""[Script Info]\nScriptType: v4.00+\nPlayResX: {video_width}\nPlayResY: {video_height}\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,{font_choice},{ass_font_size},{primary_color_ass},&H0000FFFF,{outline_color_ass},{back_color_ass},0,0,0,0,100,100,0,0,{border_style},{ass_outline},0,2,10,10,{ass_margin_v},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"""
             actual_font_file = FONT_MAP[font_choice]
             
-            full_translated_text = "" 
+            # เก็บข้อมูลเป็นลิสต์ไว้ทำระบบพากย์แบบสับประโยค
+            segments_data = []
+            valid_idx = 1
 
             for i, segment in enumerate(response.segments, start=1):
                 start_time = segment['start'] if isinstance(segment, dict) else getattr(segment, 'start')
@@ -289,7 +298,9 @@ if uploaded_file and api_key:
                     clean_text = " ".join(clean_text.split())
                 if not clean_text: continue
                 
-                full_translated_text += clean_text + " "
+                # บันทึกข้อมูลข้อความย่อยและวินาทีที่เริ่มพูด
+                segments_data.append((valid_idx, clean_text, start_time))
+                valid_idx += 1
 
                 formatted_text = split_text_by_pixel_width(clean_text, font_file=actual_font_file, pil_font_size=actual_pil_font_size, max_width_pixels=allowed_pixel_width)
                 lines = formatted_text.split('\n')
@@ -323,54 +334,82 @@ if uploaded_file and api_key:
                 f.write(ass_content)
             st.success("สร้างไฟล์ซับไตเติลสำเร็จ!")
             
-            if enable_dubbing and "ภาษาอังกฤษ" in sub_language:
-                st.info("🗣️ กำลังให้ AI (Edge TTS) สร้างเสียงพากย์ภาษาอังกฤษ...")
-                if os.path.exists("dubbed_audio.mp3"):
-                    os.remove("dubbed_audio.mp3")
+            # =========================================================
+            # 🎙️ ขั้นตอนสร้างเสียงพากย์ย่อยแยกชิ้นตาม Timeline
+            # =========================================================
+            if enable_dubbing and "ภาษาอังกฤษ" in sub_language and segments_data:
+                st.info("🗣️ ระบบ Pro: กำลังส่ง AI พากย์เสียงแยกประโยคเพื่อความเป๊ะของจังหวะ...")
                 
-                async def generate_dub():
-                    communicate = edge_tts.Communicate(full_translated_text, "en-US-GuyNeural")
-                    await communicate.save("dubbed_audio.mp3")
+                async def generate_segmented_dubs(data, voice):
+                    for idx, text, _ in data:
+                        # ลบไฟล์เก่าทิ้งก่อนเพื่อความสะอาด
+                        if os.path.exists(f"seg_{idx}.mp3"): os.remove(f"seg_{idx}.mp3")
+                        communicate = edge_tts.Communicate(text, voice)
+                        await communicate.save(f"seg_{idx}.mp3")
                 
-                asyncio.run(generate_dub())
-                st.success("สร้างเสียงพากย์สำเร็จ!")
+                asyncio.run(generate_segmented_dubs(segments_data, selected_voice))
+                st.success("สร้างไฟล์เสียงพากย์ตรงจังหวะเวลาสำเร็จ!")
 
         except Exception as e:
-            st.error(f"เกิดข้อผิดพลาด: {e}")
+            st.error(f"เกิดข้อผิดพลาดในการประมวลผลข้อความ: {e}")
             st.stop()
 
-        st.info("⚙️ ขั้นตอนสุดท้าย: กำลังเรนเดอร์วิดีโอ Final...")
+        st.info("⚙️ ขั้นตอนสุดท้าย: กำลังผสมเสียงและเรนเดอร์วิดีโอ Final ด้วย FFmpeg...")
         try:
             if os.path.exists("output.mp4"): os.remove("output.mp4")
             
             cmd = ['ffmpeg', '-y', '-i', 'input.mp4']
             
-            if enable_dubbing and "ภาษาอังกฤษ" in sub_language and os.path.exists("dubbed_audio.mp3"):
-                cmd.extend(['-i', 'dubbed_audio.mp3'])
+            if enable_dubbing and "ภาษาอังกฤษ" in sub_language and segments_data:
+                # 1. โหลดไฟล์เสียงย่อยเข้าเป็น Input ของ FFmpeg ทั้งหมด
+                for idx, _, _ in segments_data:
+                    cmd.extend(['-i', f'seg_{idx}.mp3'])
+                
+                # 2. คำนวณรหัสหน่วงเวลา (adelay) ให้เสียงแต่ละท่อนเริ่มส่งเสียงตามนาทีจริงในวิดีโอ
+                filter_str = ""
+                for idx, _, start in segments_data:
+                    delay_ms = int(start * 1000)
+                    filter_str += f"[{idx}:a]adelay={delay_ms}|{delay_ms}[a{idx}]; "
+                
+                # 3. นำเสียงทั้งหมดที่หน่วงเวลาแล้วมามัดรวมกัน (amix) ให้กลายเป็น Track เดียว
+                num_inputs = len(segments_data)
+                mix_inputs = "".join(f"[a{idx}]" for idx, _, _ in segments_data)
+                
+                if num_inputs > 1:
+                    filter_str += f"{mix_inputs}amix=inputs={num_inputs}:normalize=0[outa]; "
+                else:
+                    filter_str += f"[a1]anull[outa]; "
+                
+                # 4. พ่วงฟิลเตอร์ซับไตเติลเข้ากับฝั่งวิดีโอ
+                filter_str += "[0:v]subtitles=subs.ass:fontsdir=.[outv]"
+                
                 cmd.extend([
-                    '-vf', "subtitles=subs.ass:fontsdir=.", 
-                    '-c:v', 'libx264', '-crf', '17', '-preset', 'slow', 
-                    '-c:a', 'aac', 
-                    '-map', '0:v:0', '-map', '1:a:0', 
-                    'output.mp4'
+                    '-filter_complex', filter_str,
+                    '-map', '[outv]', '-map', '[outa]',
+                    '-c:v', 'libx264', '-crf', '17', '-preset', 'slow',
+                    '-c:a', 'aac', 'output.mp4'
                 ])
             else:
+                # เคสธรรมดา (ทำแค่ซับ ไม่พากย์เสียง)
                 cmd.extend([
                     '-vf', "subtitles=subs.ass:fontsdir=.", 
                     '-c:v', 'libx264', '-crf', '17', '-preset', 'slow', 
-                    '-c:a', 'copy', 
-                    'output.mp4'
+                    '-c:a', 'copy', 'output.mp4'
                 ])
             
             subprocess.run(cmd, check=True)
-            st.success("🎉 อัตโนมัติเสร็จสมบูรณ์! ได้ไฟล์คลิปพร้อมลุยแล้วครับ")
+            st.success("🎉 อัตโนมัติเสร็จสมบูรณ์! ได้คลิปโกอินเตอร์จังหวะเนียนกริบแล้วครับ")
             
             with open("output.mp4", "rb") as file:
                 st.download_button(label="📥 ดาวน์โหลดวีดีโอ Final", data=file, file_name="video_final.mp4", mime="video/mp4")
                 
-        except subprocess.CalledProcessError:
-            st.error("เกิดข้อผิดพลาดในการประมวลผลวีดีโอด้วย FFmpeg")
+        except subprocess.CalledProcessError as e:
+            st.error(f"เกิดข้อผิดพลาดในการประมวลผลวิดีโอ: {e}")
         finally:
-            for temp_file in ["raw_upload.mp4", "input.mp4", "audio.mp3", "subs.ass", "dubbed_audio.mp3"]:
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
+            # ทำความสะอาดขยะไฟล์ย่อยในเซิร์ฟเวอร์หลังรันเสร็จ
+            temp_files = ["raw_upload.mp4", "input.mp4", "audio.mp3", "subs.ass"]
+            for temp in temp_files:
+                if os.path.exists(temp): os.remove(temp)
+            if 'segments_data' in locals():
+                for idx, _, _ in segments_data:
+                    if os.path.exists(f"seg_{idx}.mp3"): os.remove(f"seg_{idx}.mp3")
