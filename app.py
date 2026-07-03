@@ -114,21 +114,31 @@ def fetch_pexels_video(keyword, pexels_key, output_path):
         pass
     return False
 
-# 🌟 ฟังก์ชันหาคีย์เวิร์ดฉบับอัปเกรด (หน่วงเวลากันโดนแบน + สุ่มคีย์เวิร์ดสำรอง)
+# 🌟 ฟังก์ชันหาคีย์เวิร์ดฉบับอัปเกรด (คุมโทนภาพสารคดี และสกัดภาพคนออก)
 def get_english_keyword_from_ai(client, thai_text):
     try:
-        prompt = f"Extract exactly ONE or TWO English keywords representing this Thai text for searching stock video. Respond with only the keywords, no explanation, no punctuation. Text: '{thai_text}'"
+        # อัปเกรด Prompt ให้สวมบทบาทเป็นผู้กำกับภาพ B-Roll
+        prompt = f"""
+        You are an expert video director selecting b-roll footage for a faceless documentary.
+        Based on this Thai text: '{thai_text}'
+        Provide 1 to 2 English search keywords for a stock video site.
+        Strict Rules:
+        1. Focus on objects, nature, landscapes, vintage items, or abstract concepts.
+        2. Strictly NO crowds, NO faces, NO people looking at camera. (Must be Faceless)
+        3. Make it cinematic and atmospheric.
+        4. Reply with ONLY the keywords. No punctuation, no explanation.
+        """
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama3-8b-8192",
-            temperature=0.5
+            temperature=0.3 # ลดความแกว่งของคำตอบ ให้ AI ตอบเป๊ะขึ้น
         )
         time.sleep(2.5) # ⏱️ เบรกพัก 2.5 วินาที เพื่อไม่ให้ Groq API โดนตัด
         return chat_completion.choices[0].message.content.strip().replace('"', '')
     except Exception:
         time.sleep(2.5)
-        # ถ้ายังพังอีก จะสุ่มคีย์เวิร์ดสำรอง เพื่อไม่ให้เป็นคำว่า nature ซ้ำๆ ตลอดคลิป
-        fallback_keywords = ["technology", "people", "business", "city", "abstract", "nature", "lifestyle", "education"]
+        # สุ่มคีย์เวิร์ดสำรองที่เป็นแนว Faceless B-roll
+        fallback_keywords = ["cinematic landscape", "abstract background", "vintage texture", "empty scenery", "nature environment", "dark cinematic"]
         return random.choice(fallback_keywords)
 
 st.set_page_config(page_title="AI Auto-Edit & Subtitle Pro", page_icon="🎬")
