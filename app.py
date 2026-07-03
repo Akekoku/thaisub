@@ -4,6 +4,8 @@ import subprocess
 import os
 import re
 import shutil
+import asyncio
+import edge_tts
 from pythainlp.tokenize import word_tokenize
 from PIL import ImageFont
 
@@ -159,9 +161,6 @@ sub_language = st.radio(
     horizontal=True
 )
 
-# =========================================================
-# 🌟 เมนูใหม่: ระบบพากย์เสียงอินเตอร์ (Auto-Dubbing)
-# =========================================================
 enable_dubbing = False
 if "ภาษาอังกฤษ" in sub_language:
     st.markdown("### 🎙️ ระบบพากย์เสียงอัตโนมัติ (Auto-Dubbing)")
@@ -248,7 +247,7 @@ if uploaded_file and api_key:
             ass_content = f"""[Script Info]\nScriptType: v4.00+\nPlayResX: {video_width}\nPlayResY: {video_height}\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,{font_choice},{ass_font_size},{primary_color_ass},&H0000FFFF,{outline_color_ass},{back_color_ass},0,0,0,0,100,100,0,0,{border_style},{ass_outline},0,2,10,10,{ass_margin_v},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"""
             actual_font_file = FONT_MAP[font_choice]
             
-            full_translated_text = "" # ตัวแปรเก็บข้อความไว้ให้ AI พากย์
+            full_translated_text = "" 
 
             for i, segment in enumerate(response.segments, start=1):
                 start_time = segment['start'] if isinstance(segment, dict) else getattr(segment, 'start')
@@ -263,7 +262,6 @@ if uploaded_file and api_key:
                     clean_text = " ".join(clean_text.split())
                 if not clean_text: continue
                 
-                # เก็บข้อความสำหรับพากย์
                 full_translated_text += clean_text + " "
 
                 formatted_text = split_text_by_pixel_width(clean_text, font_file=actual_font_file, pil_font_size=actual_pil_font_size, max_width_pixels=allowed_pixel_width)
@@ -299,14 +297,19 @@ if uploaded_file and api_key:
             st.success("สร้างไฟล์ซับไตเติลสำเร็จ!")
             
             # =========================================================
-            # 🌟 ถ้าเปิด Auto-Dubbing ให้รันคำสั่งสร้างไฟล์เสียง
+            # 🌟 จุดที่แก้ไข: ใช้ Python เรียก edge-tts โดยตรง (ตัดปัญหา Path)
             # =========================================================
             if enable_dubbing and "ภาษาอังกฤษ" in sub_language:
                 st.info("🗣️ กำลังให้ AI (Edge TTS) สร้างเสียงพากย์ภาษาอังกฤษ...")
                 if os.path.exists("dubbed_audio.mp3"):
                     os.remove("dubbed_audio.mp3")
-                # ใช้เสียงผู้ชายสำเนียงอเมริกันมาตรฐาน (GuyNeural)
-                subprocess.run(['edge-tts', '--voice', 'en-US-GuyNeural', '--text', full_translated_text, '--write-media', 'dubbed_audio.mp3'], check=True)
+                
+                async def generate_dub():
+                    communicate = edge_tts.Communicate(full_translated_text, "en-US-GuyNeural")
+                    await communicate.save("dubbed_audio.mp3")
+                
+                # สั่งรันฟังก์ชันแบบไม่พึ่งพา Command line
+                asyncio.run(generate_dub())
                 st.success("สร้างเสียงพากย์สำเร็จ!")
 
         except Exception as e:
@@ -317,21 +320,18 @@ if uploaded_file and api_key:
         try:
             if os.path.exists("output.mp4"): os.remove("output.mp4")
             
-            # 🌟 เช็กว่าต้องใส่เสียงพากย์ใหม่ หรือใช้เสียงเดิม
             cmd = ['ffmpeg', '-y', '-i', 'input.mp4']
             
             if enable_dubbing and "ภาษาอังกฤษ" in sub_language and os.path.exists("dubbed_audio.mp3"):
-                # ดึงวิดีโอจากไฟล์ที่ 1 และดึงเสียงจากไฟล์ที่ 2 (dubbed_audio)
                 cmd.extend(['-i', 'dubbed_audio.mp3'])
                 cmd.extend([
                     '-vf', "subtitles=subs.ass:fontsdir=.", 
                     '-c:v', 'libx264', '-crf', '17', '-preset', 'slow', 
                     '-c:a', 'aac', 
-                    '-map', '0:v:0', '-map', '1:a:0', # 👈 สลับ Track เสียงตรงนี้
+                    '-map', '0:v:0', '-map', '1:a:0', 
                     'output.mp4'
                 ])
             else:
-                # เคสปกติ ใช้เสียงต้นฉบับ
                 cmd.extend([
                     '-vf', "subtitles=subs.ass:fontsdir=.", 
                     '-c:v', 'libx264', '-crf', '17', '-preset', 'slow', 
