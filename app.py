@@ -86,16 +86,14 @@ def get_video_dimensions(video_path):
     except Exception:
         return 720, 1280
 
-# 🌟 ฟังก์ชันดาวน์โหลดคลิปฉบับอัปเกรด (สุ่มวิดีโอเพื่อไม่ให้ภาพซ้ำ)
 def fetch_pexels_video(keyword, pexels_key, output_path):
     headers = {"Authorization": pexels_key}
-    # ขอ 15 อันดับแรกมาให้ระบบสุ่ม
     url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=15"
     try:
         res = requests.get(url, headers=headers, timeout=10).json()
         if res.get("videos"):
             videos = res["videos"]
-            random.shuffle(videos) # สับเปลี่ยนลำดับวิดีโอ
+            random.shuffle(videos)
             download_url = None
             for v in videos:
                 video_files = v.get("video_files", [])
@@ -104,7 +102,6 @@ def fetch_pexels_video(keyword, pexels_key, output_path):
                         download_url = f.get("link")
                         break
                 if download_url: break
-            
             if download_url:
                 v_res = requests.get(download_url, timeout=15)
                 with open(output_path, "wb") as f:
@@ -114,33 +111,27 @@ def fetch_pexels_video(keyword, pexels_key, output_path):
         pass
     return False
 
-# 🌟 ฟังก์ชันหาคีย์เวิร์ดฉบับอัปเกรด V.4 (ระบบ AI คิดอัตโนมัติ รองรับทุกหัวข้อครอบจักรวาล)
-def get_english_keyword_from_ai(client, thai_text):
+# 🌟 ฟังก์ชันหาคีย์เวิร์ด V.5: เน้นค้นหา "ใคร กำลังทำอะไร" (Action Scene)
+def get_action_keyword_from_ai(client, thai_text):
     try:
-        # ถอดคำศัพท์เฉพาะออก แล้วสอนให้ AI รู้จักการดึง "วัตถุที่จับต้องได้" แทน
         prompt = f"""
-        Task: Find 1-2 English stock video search keywords for this Thai text: '{thai_text}'
-
-        Step 1: Translate the Thai text to English.
-        Step 2: Identify the MOST prominent concrete, physical objects or elements in the sentence (e.g., car, tree, building, animal, food, tool, sky, water). 
-        Step 3: If the sentence is completely abstract, guess a relevant physical object that represents the mood.
-
-        Strict Rules:
-        - NEVER use abstract concepts (e.g., history, science, past, future, emotion).
-        - STRICTLY NO PEOPLE, NO CROWDS, NO FACES. The footage must be faceless.
-        - Output ONLY the English keyword(s). No punctuation, no explanations.
+        You are creating a storyboard. Read this Thai scene description: '{thai_text}'
+        Step 1: Determine "Who is doing what" in this scene.
+        Step 2: Create a 2 to 4 word English search query for Pexels Stock Video. 
+        Pexels needs literal, simple action phrases. (Example: "woman drinking coffee", "man walking forest", "ice melting", "scientist working").
+        Do not use abstract words. Do not use complex sentences. 
+        Output ONLY the search query.
         """
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama3-8b-8192",
-            temperature=0.3 # เพิ่มความยืดหยุ่นขึ้นนิดหน่อย ให้มันคิดหาวัตถุได้หลากหลาย
+            temperature=0.2 
         )
-        time.sleep(2.5) # ⏱️ เบรกพัก 2.5 วินาที
+        time.sleep(2.5) 
         return chat_completion.choices[0].message.content.strip().replace('"', '')
     except Exception:
         time.sleep(2.5)
-        # สุ่มคีย์เวิร์ดสำรองที่เป็นวิวทิวทัศน์หรือวัตถุกลางๆ ใช้ได้กับหลายสถานการณ์
-        fallback_keywords = ["cinematic landscape", "vintage object", "nature details", "urban architecture", "abstract background"]
+        fallback_keywords = ["cinematic landscape", "people walking", "vintage object", "nature details"]
         return random.choice(fallback_keywords)
 
 st.set_page_config(page_title="AI Auto-Edit & Subtitle Pro", page_icon="🎬")
@@ -150,74 +141,71 @@ if "GROQ_API_KEY" in st.secrets: api_key = st.secrets["GROQ_API_KEY"]
 else:
     st.error("❌ ยังไม่ได้ตั้งค่าล็อก Groq API Key ในระบบ Secrets")
     st.stop()
-
 pexels_key = st.secrets.get("PEXELS_API_KEY", "")
 
 st.markdown("### ✂️ ระบบ AI ตัดต่ออัตโนมัติ (Rough Cut)")
-enable_dead_air = st.toggle("🔇 เปิดระบบตรวจจับและตัดช่วงเงียบ (Dead Air Removal)", value=False)
+enable_dead_air = st.toggle("🔇 เปิดระบบตรวจจับและตัดช่วงเงียบ", value=False)
 silence_thresh, silence_duration = "-35dB", 0.5
 if enable_dead_air:
     c_d1, c_d2 = st.columns(2)
     with c_d1: silence_thresh = f"{st.slider('ระดับเสียงเงียบ', -50, -10, -35, 5)}dB"
     with c_d2: silence_duration = st.slider('ระยะเวลาเงียบขั้นต่ำ', 0.2, 2.0, 0.5, 0.1)
 
-enable_filler_removal = st.toggle("🧹 เปิดระบบล้างคำฟุ่มเฟือย (Auto-Clean Text)", value=True)
+enable_filler_removal = st.toggle("🧹 เปิดระบบล้างคำฟุ่มเฟือย", value=True)
 if enable_filler_removal:
-    filler_words_input = st.text_input("📝 คำขยะที่ต้องการให้ AI ลบ (คั่นด้วยลูกน้ำ)", value="เอ่อ, อ่า, อืม, แบบว่า, คือแบบ")
+    filler_words_input = st.text_input("📝 คำขยะที่ต้องการให้ลบ", value="เอ่อ, อ่า, อืม, แบบว่า, คือแบบ")
     filler_words_list = [w.strip() for w in filler_words_input.split(',') if w.strip()]
 
-st.markdown("### 🎭 โหมดช่องไร้ใบหน้า (Faceless Automation)")
-enable_faceless = st.toggle("🎬 เปิดโหมดสร้างภาพวิดีโอพื้นหลังอัตโนมัติ (Faceless Mode)", value=False)
+st.markdown("### 🎭 โหมดช่องไร้ใบหน้า (Storyboard Automation)")
+enable_faceless = st.toggle("🎬 เปิดโหมดสร้างภาพวิดีโอพื้นหลัง (อิงตามฉาก)", value=False)
+scene_target_duration = 8.0
+if enable_faceless:
+    scene_target_duration = st.slider("⏱️ กำหนดความยาวของแต่ละฉาก (วินาทีต่อคลิป)", min_value=4.0, max_value=15.0, value=8.0, step=1.0)
+    st.caption("💡 ระบบจะรวบรวมเนื้อหาคำพูดให้ได้เวลาใกล้เคียงกับที่น้าตั้งไว้ แล้วดึงวิดีโอ 1 คลิปมาเป็นฉากหลัง ทำให้ภาพไม่ตัดไวเกินไปครับ")
 
 st.markdown("### 🌐 เลือกภาษาของซับไตเติล")
-sub_language = st.radio("ภาษาซับไตเติล?", ["🇹🇭 ภาษาไทย (ถอดจากเสียงพูดต้นฉบับ)", "🇬🇧 ภาษาอังกฤษ (แปลอัตโนมัติจากเสียงพูด)"], horizontal=True)
+sub_language = st.radio("ภาษาซับไตเติล?", ["🇹🇭 ภาษาไทย", "🇬🇧 ภาษาอังกฤษ"], horizontal=True)
 
 enable_dubbing = False
 selected_voice = "en-US-JennyNeural"
 if "ภาษาอังกฤษ" in sub_language:
-    st.markdown("### 🎙️ ระบบพากย์เสียงอัตโนมัติ (Auto-Dubbing V.2 Pro)")
-    enable_dubbing = st.toggle("🎧 เปิดใช้งานเสียงพากย์ AI ฝรั่ง (วางตำแหน่งตรงตามจังหวะพูดเป๊ะ)", value=False)
+    st.markdown("### 🎙️ ระบบพากย์เสียงอัตโนมัติ")
+    enable_dubbing = st.toggle("🎧 เปิดใช้งานเสียงพากย์ AI ฝรั่ง", value=False)
     if enable_dubbing:
-        voice_labels = {
-            "👩 เสียงผู้หญิง - ร่าเริง สดใส (Jenny)": "en-US-JennyNeural",
-            "👩 เสียงผู้หญิง - นุ่มนวล (Aria)": "en-US-AriaNeural",
-            "👨 เสียงผู้ชาย - อบอุ่น (Guy)": "en-US-GuyNeural",
-            "👨 เสียงผู้ชาย - ดุดัน (Brian)": "en-US-BrianNeural"
-        }
-        selected_voice = voice_labels[st.selectbox("👤 เลือกสไตล์นักพากย์ AI:", list(voice_labels.keys()), index=0)]
+        voice_labels = {"👩 หญิง - สดใส (Jenny)": "en-US-JennyNeural", "👩 หญิง - นุ่มนวล (Aria)": "en-US-AriaNeural", "👨 ชาย - อบอุ่น (Guy)": "en-US-GuyNeural"}
+        selected_voice = voice_labels[st.selectbox("👤 เลือกสไตล์นักพากย์:", list(voice_labels.keys()), index=0)]
 
 st.markdown("### 🛠️ ปรับแต่งสไตล์ซับไตเติล")
-with st.expander("คลิกเพื่อเปิดเครื่องมือปรับแต่งตัวอักษร สี และเอฟเฟกต์", expanded=True):
+with st.expander("เปิดเครื่องมือปรับแต่งตัวอักษร", expanded=False):
     font_choice = st.selectbox("✒️ ฟอนต์:", list(FONT_MAP.keys()), index=8)
     c1, c2, c3 = st.columns(3)
     with c1: text_color = st.color_picker("🅰️ สีตัวอักษร", "#FFFFFF")
     with c2: outline_color = st.color_picker("🖍️ สีขอบ", "#000000")
-    with c3: bg_style = st.selectbox("🔲 สไตล์พื้นหลัง", ["ขอบปกติ (Outline)", "แถบกล่องดำรองหลัง (Box)"])
+    with c3: bg_style = st.selectbox("🔲 สไตล์พื้นหลัง", ["ขอบปกติ", "แถบกล่องดำรองหลัง"])
 
-    anim_choice = st.selectbox("🎬 เอฟเฟกต์:", ["ไม่มีเอฟเฟกต์ (นิ่งๆ/ค่าเริ่มต้น)", "เด้งพอง (Pop-up Punch)", "ค่อยๆ ปรากฏ (Soft Fade-in)"], index=0)
+    anim_choice = st.selectbox("🎬 เอฟเฟกต์:", ["ไม่มี", "เด้งพอง (Pop-up)", "ค่อยๆ ปรากฏ (Fade-in)"], index=0)
     pop_scale, pop_duration, fade_duration = 130, 150, 200
-    if anim_choice == "เด้งพอง (Pop-up Punch)":
+    if anim_choice == "เด้งพอง (Pop-up)":
         ca1, ca2 = st.columns(2)
-        with ca1: pop_scale = st.slider("📈 ความขยายตอนเด้ง (%)", 110, 180, 130, 5)
-        with ca2: pop_duration = st.slider("⏱️ ความเร็วยุบตัว (มิลลิวินาที)", 50, 400, 150, 10)
+        with ca1: pop_scale = st.slider("ความขยายตอนเด้ง (%)", 110, 180, 130, 5)
+        with ca2: pop_duration = st.slider("ความเร็วยุบตัว", 50, 400, 150, 10)
 
     cl1, cl2 = st.columns(2)
     with cl1:
-        font_size_choice = st.slider("📏 ขนาดตัวอักษร:", 14, 40, 18)
-        outline_thickness = st.slider("✏️ ความหนาขอบ:", 0, 5, 1)
+        font_size_choice = st.slider("ขนาดตัวอักษร:", 14, 40, 18)
+        outline_thickness = st.slider("ความหนาขอบ:", 0, 5, 1)
     with cl2:
-        max_width_pct = st.slider("🎯 ความกว้างกรอบข้อความ (%):", 50, 150, 100)
-        margin_v_choice = st.slider("🔼 ความสูงจากขอบล่าง:", 20, 200, 50)
+        max_width_pct = st.slider("ความกว้างกรอบข้อความ (%):", 50, 150, 100)
+        margin_v_choice = st.slider("ความสูงจากขอบล่าง:", 20, 200, 50)
     force_max_2_lines = st.checkbox("🚫 บังคับซับไม่เกิน 2 บรรทัด", value=True)
 
-# รองรับไฟล์ WAV ตามที่อัปเกรดล่าสุด
 uploaded_file = st.file_uploader("📂 เลือกไฟล์วีดีโอหรือเสียง (MP4 / MP3 / WAV)", type=["mp4", "mp3", "wav"])
 
 if uploaded_file and api_key:
-    if st.button("🚀 เริ่มกระบวนการโรงงาน AI อัตโนมัติ"):
+    if st.button("🚀 เริ่มกระบวนการผลิตคลิปตามสตอรี่บอร์ด"):
         client = Groq(api_key=api_key)
         
-        with st.spinner("กำลังอัปโหลดและเตรียมไฟล์..."):
+        with st.spinner("กำลังเตรียมไฟล์..."):
             file_ext = uploaded_file.name.split('.')[-1].lower()
             with open(f"raw_upload.{file_ext}", "wb") as f: f.write(uploaded_file.getbuffer())
         
@@ -227,7 +215,7 @@ if uploaded_file and api_key:
         elif file_ext == "wav": subprocess.run(['ffmpeg', '-y', '-i', 'raw_upload.wav', '-c:a', 'libmp3lame', '-b:a', '64k', 'audio.mp3'], check=True)
         else: subprocess.run(['ffmpeg', '-y', '-i', 'raw_upload.mp4', '-vn', '-c:a', 'libmp3lame', '-b:a', '64k', 'audio.mp3'], check=True)
 
-        st.info(f"🎙️ กำลังให้ AI ถอดความและสกัดคีย์เวิร์ด...")
+        st.info(f"🎙️ กำลังให้ AI ถอดความและวางแผนสตอรี่บอร์ด...")
         try:
             with open("audio.mp3", "rb") as audio_file:
                 response_th = client.audio.transcriptions.create(model="whisper-large-v3", file=("audio.mp3", audio_file), response_format="verbose_json", language="th")
@@ -245,7 +233,16 @@ if uploaded_file and api_key:
             
             ass_content = f"""[Script Info]\nScriptType: v4.00+\nPlayResX: {video_width}\nPlayResY: {video_height}\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,{font_choice},{ass_font_size},{hex_to_ass_color(text_color)},&H0000FFFF,{hex_to_ass_color(outline_color)},&H00000000,0,0,0,0,100,100,0,0,1,{ass_outline},0,2,10,10,{ass_margin_v},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"""
             actual_font_file = FONT_MAP[font_choice]
-            segments_data = []
+            
+            # --- ระบบแยกประโยคสำหรับซับและพากย์ ---
+            segments_data_for_subs = []
+            
+            # --- ระบบจัดฉากสำหรับดาวน์โหลดวิดีโอ (Storyboard Mode) ---
+            scenes_data = []
+            current_scene_text = ""
+            scene_start = 0.0
+            scene_end = 0.0
+            scene_idx = 1
             
             for idx, (seg_th, seg_sub) in enumerate(zip(response_th.segments, response_sub.segments), start=1):
                 start_time = seg_sub['start'] if isinstance(seg_sub, dict) else getattr(seg_sub, 'start')
@@ -254,24 +251,48 @@ if uploaded_file and api_key:
                 text_th = seg_th['text'].strip() if isinstance(seg_th, dict) else getattr(seg_th, 'text').strip()
                 
                 if not text_sub: continue
-                duration = end_time - start_time
-                if duration <= 0: duration = 1.0
+                
+                # เก็บข้อมูลทำซับไตเติล
+                segments_data_for_subs.append((idx, text_sub, start_time, end_time))
+                
+                # จัดกลุ่มทำฉาก (Scene)
+                if current_scene_text == "": scene_start = start_time
+                current_scene_text += text_th + " "
+                scene_end = end_time
+                
+                if (scene_end - scene_start) >= scene_target_duration:
+                    scenes_data.append({"idx": scene_idx, "start": scene_start, "end": scene_end, "text": current_scene_text.strip()})
+                    scene_idx += 1
+                    current_scene_text = ""
+            
+            # เก็บเศษฉากสุดท้าย
+            if current_scene_text != "":
+                scenes_data.append({"idx": scene_idx, "start": scene_start, "end": scene_end, "text": current_scene_text.strip()})
 
-                bg_clip_path = "none"
-                if enable_faceless and pexels_key:
-                    kw = get_english_keyword_from_ai(client, text_th)
-                    st.caption(f"🎬 คีย์เวิร์ดที่ {idx}: '{kw}' -> กำลังดึงคลิป...")
-                    raw_clip = f"raw_clip_{idx}.mp4"
-                    processed_clip = f"clip_{idx}.mp4"
+            # 🎬 ดึงวิดีโอตามฉากที่จัดไว้
+            if enable_faceless and pexels_key:
+                st.info(f"🎞️ ระบบจัดสรรได้ทั้งหมด {len(scenes_data)} ฉาก กำลังดึงวิดีโอประกอบ...")
+                for scene in scenes_data:
+                    kw = get_action_keyword_from_ai(client, scene["text"])
+                    st.caption(f"📍 ฉากที่ {scene['idx']} ({scene['end']-scene['start']:.1f} วิ) คีย์เวิร์ด: '{kw}'")
+                    raw_clip = f"raw_scene_{scene['idx']}.mp4"
+                    processed_clip = f"clip_{scene['idx']}.mp4"
+                    scene["clip_path"] = "none"
                     
                     if fetch_pexels_video(kw, pexels_key, raw_clip):
-                        scale_cmd = ['ffmpeg', '-y', '-i', raw_clip, '-ss', '0', '-t', str(duration), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30', '-c:v', 'libx264', '-an', processed_clip]
+                        scale_cmd = ['ffmpeg', '-y', '-i', raw_clip, '-ss', '0', '-t', str(scene['end']-scene['start']), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30', '-c:v', 'libx264', '-an', processed_clip]
                         subprocess.run(scale_cmd, capture_output=True)
-                        if os.path.exists(processed_clip): bg_clip_path = processed_clip
+                        if os.path.exists(processed_clip): scene["clip_path"] = processed_clip
                     if os.path.exists(raw_clip): os.remove(raw_clip)
+                    
+                    # ถ้าโหลดพลาด หรือ Pexels ไม่มีคลิป สร้างจอดำสำรองไว้ให้ความยาวตรง
+                    if scene["clip_path"] == "none":
+                        dur = scene['end'] - scene['start']
+                        subprocess.run(['ffmpeg', '-y', '-f', 'lavfi', '-i', f'color=c=black:s={video_width}x{video_height}:d={dur}:r=30', '-c:v', 'libx264', f"clip_{scene['idx']}.mp4"], capture_output=True)
+                        scene["clip_path"] = f"clip_{scene['idx']}.mp4"
 
-                segments_data.append((idx, text_sub, start_time, end_time, bg_clip_path))
-
+            # 🔤 สร้างไฟล์ซับไตเติล (ใช้ข้อมูลย่อยรายประโยคเหมือนเดิม เพื่อให้ซับตรงปาก)
+            for idx, text_sub, start_time, end_time in segments_data_for_subs:
                 formatted_text = split_text_by_pixel_width(text_sub, font_file=actual_font_file, pil_font_size=actual_pil_font_size, max_width_pixels=allowed_pixel_width)
                 lines = formatted_text.split('\n')
                 if force_max_2_lines and len(lines) > 2:
@@ -288,61 +309,57 @@ if uploaded_file and api_key:
             
             with open("subs.ass", "w", encoding="utf-8") as f: f.write(ass_content)
 
+            # 🗣️ พากย์เสียง AI
             if enable_dubbing and "ภาษาอังกฤษ" in sub_language:
                 st.info("🗣️ กำลังเจนเสียงพากย์ AI...")
                 async def gen_dubs(data, voice):
-                    for idx, text, _, _, _ in data:
+                    for idx, text, _, _ in data:
                         if os.path.exists(f"seg_{idx}.mp3"): os.remove(f"seg_{idx}.mp3")
                         await edge_tts.Communicate(text, voice).save(f"seg_{idx}.mp3")
-                asyncio.run(gen_dubs(segments_data, selected_voice))
+                asyncio.run(gen_dubs(segments_data_for_subs, selected_voice))
 
         except Exception as e:
-            st.error(f"เกิดข้อผิดพลาดในการประมวลผลข้อความ: {e}")
+            st.error(f"เกิดข้อผิดพลาด: {e}")
             st.stop()
 
         st.info("⚙️ ขั้นตอนสุดท้าย: กำลังประกอบร่างมิกซ์เสียงและภาพด้วย FFmpeg...")
         try:
             if os.path.exists("output.mp4"): os.remove("output.mp4")
-            
             bg_video_track = "raw_upload.mp4" if file_ext == "mp4" else None
             
             if enable_faceless and pexels_key:
-                for idx, _, start, end, path in segments_data:
-                    if path == "none" or not os.path.exists(path):
-                        dur = end - start
-                        subprocess.run(['ffmpeg', '-y', '-f', 'lavfi', '-i', f'color=c=black:s={video_width}x{video_height}:d={dur}:r=30', '-c:v', 'libx264', f'clip_{idx}.mp4'], capture_output=True)
-                
                 with open("concat_list.txt", "w") as f:
-                    for idx, _, _, _, _ in segments_data: f.write(f"file 'clip_{idx}.mp4'\n")
-                
+                    for scene in scenes_data: f.write(f"file '{scene['clip_path']}'\n")
                 subprocess.run(['ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', 'concat_list.txt', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', 'bg_combined.mp4'], check=True)
                 bg_video_track = "bg_combined.mp4"
 
             cmd = ['ffmpeg', '-y']
             if bg_video_track: cmd.extend(['-i', bg_video_track])
-            else: cmd.extend(['-f', 'lavfi', '-i', f'color=c=black:s=720x1280:d={segments_data[-1][3]}:r=30'])
+            else: cmd.extend(['-f', 'lavfi', '-i', f'color=c=black:s=720x1280:d={segments_data_for_subs[-1][3]}:r=30'])
             
             if enable_dubbing and "ภาษาอังกฤษ" in sub_language:
-                for idx, _, _, _, _ in segments_data: cmd.extend(['-i', f"seg_{idx}.mp3"])
+                for idx, _, _, _ in segments_data_for_subs: cmd.extend(['-i', f"seg_{idx}.mp3"])
                 filter_str = ""
-                for idx, _, start, _, _ in segments_data: filter_str += f"[{idx}:a]adelay={int(start * 1000)}|{int(start * 1000)}[a{idx}]; "
-                mix_inputs = "".join(f"[a{idx}]" for idx, _, _, _, _ in segments_data)
-                filter_str += f"{mix_inputs}amix=inputs={len(segments_data)}:normalize=0[outa]; [0:v]subtitles=subs.ass:fontsdir=.[outv]"
+                for idx, _, start, _ in segments_data_for_subs: filter_str += f"[{idx}:a]adelay={int(start * 1000)}|{int(start * 1000)}[a{idx}]; "
+                mix_inputs = "".join(f"[a{idx}]" for idx, _, _, _ in segments_data_for_subs)
+                filter_str += f"{mix_inputs}amix=inputs={len(segments_data_for_subs)}:normalize=0[outa]; [0:v]subtitles=subs.ass:fontsdir=.[outv]"
                 cmd.extend(['-filter_complex', filter_str, '-map', '[outv]', '-map', '[outa]', '-c:v', 'libx264', '-crf', '17', '-preset', 'slow', '-c:a', 'aac', 'output.mp4'])
             else:
                 cmd.extend(['-i', 'audio.mp3', '-vf', 'subtitles=subs.ass:fontsdir=.', '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'libx264', '-crf', '17', '-c:a', 'aac', 'output.mp4'])
 
             subprocess.run(cmd, check=True)
-            st.success("🎉 โรงงาน AI ประกอบคลิป Faceless อัตโนมัติเสร็จสมบูรณ์!")
+            st.success("🎉 โรงงาน AI ประกอบคลิปสตอรี่บอร์ดเสร็จสมบูรณ์!")
             
             with open("output.mp4", "rb") as file:
-                st.download_button(label="📥 ดาวน์โหลดวิดีโอ Faceless ของน้า", data=file, file_name="faceless_final.mp4", mime="video/mp4")
+                st.download_button(label="📥 ดาวน์โหลดวิดีโอสตอรี่บอร์ด", data=file, file_name="storyboard_final.mp4", mime="video/mp4")
                 
         except subprocess.CalledProcessError as e: st.error(f"เกิดข้อผิดพลาดในการประกอบวิดีโอ: {e}")
         finally:
             for f in ["raw_upload.mp4", "raw_upload.mp3", "raw_upload.wav", "audio.mp3", "subs.ass", "concat_list.txt", "bg_combined.mp4"]:
                 if os.path.exists(f): os.remove(f)
-            if 'segments_data' in locals():
-                for idx, _, _, _, _ in segments_data:
-                    if os.path.exists(f"clip_{idx}.mp4"): os.remove(f"clip_{idx}.mp4")
+            if 'scenes_data' in locals():
+                for scene in scenes_data:
+                    if os.path.exists(f"clip_{scene['idx']}.mp4"): os.remove(f"clip_{scene['idx']}.mp4")
+            if 'segments_data_for_subs' in locals():
+                for idx, _, _, _ in segments_data_for_subs:
                     if os.path.exists(f"seg_{idx}.mp3"): os.remove(f"seg_{idx}.mp3")
