@@ -6,6 +6,26 @@ import time
 import random
 
 st.set_page_config(page_title="Mini B-Roll Fetcher", page_icon="🧲")
+# =========================================================
+# 🔒 ระบบดักรหัสผ่านความปลอดภัยสูง (Gatekeeper)
+# =========================================================
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    st.markdown("## 🔐 ระบบภายในส่วนตัว (Restricted Access)")
+    st.write("แอปพลิเคชันนี้จำกัดสิทธิ์การเข้าถึงเฉพาะเจ้าของบัญชีเท่านั้น")
+    user_password = st.text_input("🔑 กรุณากรอกรหัสผ่านเพื่อเข้าใช้งาน:", type="password")
+    
+    if st.button("🔓 เข้าสู่ระบบ (Login)"):
+        correct_password = st.secrets.get("APP_PASSWORD", "12345")
+        if user_password == correct_password:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("❌ รหัสผ่านไม่ถูกต้อง! กรุณาตรวจสอบใหม่อีกครั้ง")
+    st.stop()
+# =========================================================
 st.markdown("## 🧲 เครื่องมือดูดคลิป B-Roll จากเสียงพูด (Mini Fetcher)")
 
 # ดึง API Key
