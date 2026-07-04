@@ -6,6 +6,7 @@ import time
 import random
 
 st.set_page_config(page_title="Mini B-Roll Fetcher", page_icon="🧲")
+
 # =========================================================
 # 🔒 ระบบดักรหัสผ่านความปลอดภัยสูง (Gatekeeper)
 # =========================================================
@@ -26,9 +27,9 @@ if not st.session_state["authenticated"]:
             st.error("❌ รหัสผ่านไม่ถูกต้อง! กรุณาตรวจสอบใหม่อีกครั้ง")
     st.stop()
 # =========================================================
-st.markdown("## 🧲 เครื่องมือดูดคลิป B-Roll จากเสียงพูด (Mini Fetcher)")
 
-# ดึง API Key
+st.markdown("## 🧲 เครื่องมือดูดคลิป B-Roll (Mini Fetcher)")
+
 if "GROQ_API_KEY" in st.secrets:
     api_key = st.secrets["GROQ_API_KEY"]
 else:
@@ -41,7 +42,6 @@ def get_single_action_keyword(client, text):
         prompt = f"""
         Read this Thai text: '{text}'
         Create a 2 to 4 word English search query for Pexels Stock Video that represents the main physical action or object.
-        For example, if it's about an engineer creating a rice cooker, use "engineer working" or "cooking rice".
         Output ONLY the search query. No punctuation.
         """
         chat_completion = client.chat.completions.create(
@@ -51,16 +51,16 @@ def get_single_action_keyword(client, text):
         )
         return chat_completion.choices[0].message.content.strip().replace('"', '')
     except Exception:
-        return random.choice(["engineer working", "cooking rice", "vintage technology"])
+        return random.choice(["vintage technology", "cinematic nature", "people walking"])
 
 def fetch_single_video(keyword, pexels_key, output_path):
     headers = {"Authorization": pexels_key}
-    url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=10"
+    url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=15"
     try:
         res = requests.get(url, headers=headers, timeout=10).json()
         if res.get("videos"):
             videos = res["videos"]
-            random.shuffle(videos)
+            random.shuffle(videos) # สุ่มคลิปใหม่ทุกครั้งที่กดหาคำเดิม
             for v in videos:
                 for f in v.get("video_files", []):
                     if f.get("file_type") == "video/mp4" and f.get("width") and f.get("width") >= 720:
@@ -72,10 +72,17 @@ def fetch_single_video(keyword, pexels_key, output_path):
         pass
     return False
 
-uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์เสียง 1 ฉาก (WAV / MP3)", type=["wav", "mp3"])
+# ---------------------------------------------------------
+# 🎛️ ส่วนติดต่อผู้ใช้งาน (UI)
+# ---------------------------------------------------------
+uploaded_file = st.file_uploader("📂 1. อัปโหลดไฟล์เสียง 1 ฉาก (WAV / MP3)", type=["wav", "mp3"])
+
+st.markdown("---")
+st.markdown("### 🎯 ควบคุมการค้นหาภาพ")
+manual_keyword = st.text_input("⌨️ 2. พิมพ์คีย์เวิร์ดภาษาอังกฤษที่ต้องการค้นหาเอง (เว้นว่างไว้ถ้าจะให้ AI คิดให้):", placeholder="เช่น: vintage rice cooker, engineer working")
 
 if uploaded_file and api_key and pexels_key:
-    if st.button("🧲 ค้นหาและดูดคลิปวิดีโอ"):
+    if st.button("🧲 3. ค้นหาและดูดคลิปวิดีโอ"):
         client = Groq(api_key=api_key)
         
         with st.spinner("กำลังฟังเสียง..."):
@@ -91,25 +98,31 @@ if uploaded_file and api_key and pexels_key:
                 )
             st.success(f"🗣️ ข้อความที่ได้ยิน: '{transcription.strip()}'")
             
-        with st.spinner("กำลังวิเคราะห์คีย์เวิร์ด..."):
-            keyword = get_single_action_keyword(client, transcription)
-            st.info(f"🔍 AI สกัดคีย์เวิร์ดได้คำว่า: '{keyword}'")
+        # ตรวจสอบว่าผู้ใช้พิมพ์คีย์เวิร์ดมาเองหรือไม่
+        final_keyword = ""
+        if manual_keyword.strip():
+            final_keyword = manual_keyword.strip()
+            st.info(f"🎯 ใช้คีย์เวิร์ดของคุณน้า: '{final_keyword}'")
+        else:
+            with st.spinner("กำลังให้ AI วิเคราะห์คีย์เวิร์ด..."):
+                final_keyword = get_single_action_keyword(client, transcription)
+                st.info(f"🧠 AI สกัดคีย์เวิร์ดได้คำว่า: '{final_keyword}'")
             
-        with st.spinner("กำลังดูดคลิปจาก Pexels..."):
+        with st.spinner(f"กำลังดูดคลิป '{final_keyword}' จาก Pexels..."):
             video_filename = "downloaded_broll.mp4"
             if os.path.exists(video_filename):
                 os.remove(video_filename)
                 
-            success = fetch_single_video(keyword, pexels_key, video_filename)
+            success = fetch_single_video(final_keyword, pexels_key, video_filename)
             
             if success:
                 st.video(video_filename)
                 with open(video_filename, "rb") as v_file:
                     st.download_button(
-                        label="📥 ดาวน์โหลดวิดีโอนี้ลงเครื่อง",
+                        label=f"📥 ดาวน์โหลดวิดีโอ '{final_keyword}' ลงเครื่อง",
                         data=v_file,
-                        file_name=f"Broll_{keyword.replace(' ', '_')}.mp4",
+                        file_name=f"Broll_{final_keyword.replace(' ', '_')}.mp4",
                         mime="video/mp4"
                     )
             else:
-                st.error("❌ ค้นหาวิดีโอไม่พบ หรือระบบ Pexels มีปัญหา ลองใหม่อีกครั้งครับ")
+                st.error("❌ ค้นหาวิดีโอไม่พบ หรือระบบ Pexels มีปัญหา ลองเปลี่ยนคำค้นหาดูครับน้า")
