@@ -114,35 +114,33 @@ def fetch_pexels_video(keyword, pexels_key, output_path):
         pass
     return False
 
-# 🌟 ฟังก์ชันหาคีย์เวิร์ดฉบับอัปเกรด V.3 (ระบบ Chain of Thought: สั่งแปลเป็นอังกฤษก่อนดึงคีย์เวิร์ด)
+# 🌟 ฟังก์ชันหาคีย์เวิร์ดฉบับอัปเกรด V.4 (ระบบ AI คิดอัตโนมัติ รองรับทุกหัวข้อครอบจักรวาล)
 def get_english_keyword_from_ai(client, thai_text):
     try:
-        # ใช้เทคนิคให้ AI คิดทีละสเตป เพื่อแก้ปัญหาการแปลภาษาไทยเพี้ยน
+        # ถอดคำศัพท์เฉพาะออก แล้วสอนให้ AI รู้จักการดึง "วัตถุที่จับต้องได้" แทน
         prompt = f"""
         Task: Find 1-2 English stock video search keywords for this Thai text: '{thai_text}'
 
-        Step 1: Translate the Thai text to English accurately in your mind.
-        Step 2: Identify the main literal object from the translation.
-        Step 3: Output ONLY the English keywords.
+        Step 1: Translate the Thai text to English.
+        Step 2: Identify the MOST prominent concrete, physical objects or elements in the sentence (e.g., car, tree, building, animal, food, tool, sky, water). 
+        Step 3: If the sentence is completely abstract, guess a relevant physical object that represents the mood.
 
         Strict Rules:
-        - If the text mentions "ตู้เย็น", you MUST output "refrigerator" or "fridge".
-        - If the text mentions "น้ำแข็ง", you MUST output "ice".
-        - If the text mentions "เกลือ", you MUST output "salt".
-        - The keyword must be a literal object. STRICTLY NO PEOPLE, NO CROWDS.
-        - Output ONLY the final keyword. No punctuation, no explanations.
+        - NEVER use abstract concepts (e.g., history, science, past, future, emotion).
+        - STRICTLY NO PEOPLE, NO CROWDS, NO FACES. The footage must be faceless.
+        - Output ONLY the English keyword(s). No punctuation, no explanations.
         """
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama3-8b-8192",
-            temperature=0.1 # บังคับให้ AI มีสมาธิสูงสุด ไม่ตอบออกนอกเรื่อง
+            temperature=0.3 # เพิ่มความยืดหยุ่นขึ้นนิดหน่อย ให้มันคิดหาวัตถุได้หลากหลาย
         )
         time.sleep(2.5) # ⏱️ เบรกพัก 2.5 วินาที
         return chat_completion.choices[0].message.content.strip().replace('"', '')
     except Exception:
         time.sleep(2.5)
-        # ถ้า API มีปัญหา ให้สุ่มคีย์เวิร์ดที่ตรงกับเรื่องนี้ที่สุดแทน
-        fallback_keywords = ["refrigerator", "ice block", "salt", "vintage machine"]
+        # สุ่มคีย์เวิร์ดสำรองที่เป็นวิวทิวทัศน์หรือวัตถุกลางๆ ใช้ได้กับหลายสถานการณ์
+        fallback_keywords = ["cinematic landscape", "vintage object", "nature details", "urban architecture", "abstract background"]
         return random.choice(fallback_keywords)
 
 st.set_page_config(page_title="AI Auto-Edit & Subtitle Pro", page_icon="🎬")
