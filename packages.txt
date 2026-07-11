@@ -1,1 +1,5 @@
 ffmpeg
+fontconfig
+fonts-thai-tlwg
+libfribidi0
+libharfbuzz0b
