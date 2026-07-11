@@ -91,7 +91,7 @@ else: st.error("❌ ยังไม่ได้ตั้งค่า Groq API Ke
 pexels_key = st.secrets.get("PEXELS_API_KEY", "")
 
 # =========================================================
-# 🎛️ เมนูสลับโหมดการทำงาน & ดาวน์โหลด FFmpeg (Sidebar)
+# 🎛️ เมนูสลับโหมดการทำงาน & ระบบอัปเกรดเอนจินสระ
 # =========================================================
 st.sidebar.markdown("## 🛠️ เลือกโหมดการทำงาน")
 app_mode = st.sidebar.radio("สตูดิโอของคุณ:", [
@@ -99,41 +99,45 @@ app_mode = st.sidebar.radio("สตูดิโอของคุณ:", [
     "🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join & Sub)"
 ])
 
-# 🚀 ส่วนที่เพิ่มใหม่: ปุ่มติดตั้งเอนจินสระภาษาไทย ให้เห็นกันชัดๆ
+# 🚀 โค้ดใหม่: ดึงเอนจินรุ่นที่มี HarfBuzz 100%
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🇹🇭 เครื่องมือแก้สระลอย")
+st.sidebar.markdown("### 🇹🇭 เครื่องมือแก้สระลอย (อัปเกรด)")
 if os.path.exists("./ffmpeg") and os.path.exists("./ffprobe"):
-    st.sidebar.success("✅ ติดตั้งเอนจินสระไทยเรียบร้อยแล้ว!")
-    FFMPEG_CMD = "./ffmpeg"
-    FFPROBE_CMD = "./ffprobe"
+    st.sidebar.success("✅ มีเอนจินติดตั้งอยู่แล้ว")
 else:
-    st.sidebar.warning("⚠️ ยังไม่ได้ติดตั้งเอนจินแก้สระลอย (สระจะซ้อนกัน)")
-    if st.sidebar.button("⬇️ คลิกเพื่อติดตั้ง (ใช้เวลา 1-2 นาที)"):
-        with st.spinner("กำลังดาวน์โหลดและติดตั้ง (ประมาณ 30MB)..."):
-            try:
-                url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-                urllib.request.urlretrieve(url, "ffmpeg.tar.xz")
-                with tarfile.open("ffmpeg.tar.xz", "r:xz") as tar:
-                    tar.extractall()
-                
-                extracted = [f for f in os.listdir() if f.startswith("ffmpeg-") and os.path.isdir(f)][0]
-                shutil.copy(os.path.join(extracted, "ffmpeg"), "./ffmpeg")
-                shutil.copy(os.path.join(extracted, "ffprobe"), "./ffprobe")
-                os.chmod("./ffmpeg", 0o755)
-                os.chmod("./ffprobe", 0o755)
-                
-                # ลบไฟล์ขยะทิ้ง
-                os.remove("ffmpeg.tar.xz")
-                shutil.rmtree(extracted)
-                
-                st.sidebar.success("✅ ติดตั้งเสร็จสมบูรณ์!")
-                time.sleep(2)
-                st.rerun()
-            except Exception as e:
-                st.sidebar.error(f"❌ เกิดข้อผิดพลาด: {e}")
-    
-    FFMPEG_CMD = "ffmpeg"
-    FFPROBE_CMD = "ffprobe"
+    st.sidebar.warning("⚠️ ยังไม่มีเอนจิน โปรดติดตั้ง")
+
+if st.sidebar.button("🔄 ติดตั้ง / อัปเกรดเอนจิน (ซ่อมสระลอย)"):
+    with st.spinner("กำลังดาวน์โหลด FFmpeg รุ่น Full-Engine (ประมาณ 40MB)..."):
+        try:
+            # ลบตัวเก่าทิ้งก่อน (ถ้ามี)
+            if os.path.exists("./ffmpeg"): os.remove("./ffmpeg")
+            if os.path.exists("./ffprobe"): os.remove("./ffprobe")
+            
+            # โหลดเวอร์ชัน Full จาก yt-dlp builds ที่รองรับภาษาไทย
+            url = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+            urllib.request.urlretrieve(url, "ffmpeg.tar.xz")
+            with tarfile.open("ffmpeg.tar.xz", "r:xz") as tar:
+                tar.extractall()
+            
+            # เข้าไปหาไฟล์ในโฟลเดอร์ bin
+            extracted = [f for f in os.listdir() if "ffmpeg-master" in f and os.path.isdir(f)][0]
+            shutil.copy(os.path.join(extracted, "bin", "ffmpeg"), "./ffmpeg")
+            shutil.copy(os.path.join(extracted, "bin", "ffprobe"), "./ffprobe")
+            os.chmod("./ffmpeg", 0o755)
+            os.chmod("./ffprobe", 0o755)
+            
+            os.remove("ffmpeg.tar.xz")
+            shutil.rmtree(extracted)
+            
+            st.sidebar.success("✅ อัปเกรดเสร็จสมบูรณ์! สระไทยพร้อมใช้งาน")
+            time.sleep(2)
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"❌ เกิดข้อผิดพลาด: {e}")
+
+FFMPEG_CMD = "./ffmpeg" if os.path.exists("./ffmpeg") else "ffmpeg"
+FFPROBE_CMD = "./ffprobe" if os.path.exists("./ffprobe") else "ffprobe"
 
 def get_video_dimensions(video_path):
     try:
