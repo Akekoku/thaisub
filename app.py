@@ -106,44 +106,45 @@ def fetch_pexels_video(keyword, pexels_key, output_path):
     except Exception: pass
     return False
 
-# 🌟 ฟังก์ชันอัปเกรด V.18: AI ตรวจคำผิดแบบ "ซอยแบ่งเป็นชุด" (Chunking) เพื่อกันบรรทัดหาย
+# 🌟 ฟังก์ชันอัปเกรด V.19: ผูก ID ติดกับบรรทัดบังคับให้ AI ตอบกลับแบบ 1-to-1
 def ai_proofread_segments(client, segments):
-    chunk_size = 15 # ป้อนให้ AI ตรวจทีละ 15 บรรทัด (ลดการเมาคำสั่งของ AI)
+    chunk_size = 10 # ลดลงเหลือ 10 เพื่อความเสถียร 100%
     success_all = True
     
-    # วนลูปแบ่งก้อนข้อความ
     for i in range(0, len(segments), chunk_size):
         chunk = segments[i:i+chunk_size]
-        lines_to_fix = [seg["text"] for seg in chunk]
+        
+        # แปลงข้อความเป็น Dictionary ผูกกับ ID ตัวเลข
+        dict_to_fix = {str(idx): seg["text"] for idx, seg in enumerate(chunk)}
         
         prompt = f"""คุณคือผู้เชี่ยวชาญพิสูจน์อักษรภาษาไทย หน้าที่คือแก้ไขคำผิดจากการฟังเสียง (คำพ้องเสียง เช่น รถ/ลด, หน้า/น่า, คับ/ครับ) 
-ให้ถูกต้องตามบริบท ห้ามเปลี่ยนความหมาย ห้ามรวมประโยคเด็ดขาด
+ให้ถูกต้องตามบริบท ห้ามเปลี่ยนความหมายเด็ดขาด
         
 คำสั่งบังคับสูงสุด: 
 1. ต้องตอบกลับเป็นรูปแบบ JSON Object เท่านั้น
-2. จำนวนสมาชิกใน Array ต้องเท่ากับ {len(lines_to_fix)} บรรทัดพอดีเป๊ะ ห้ามขาดและห้ามเกิน
-ให้ใช้ key ชื่อ "corrected" และ value เป็น Array ของข้อความที่แก้ไขแล้ว
+2. ให้ใช้ key ชื่อ "corrected" และ value เป็น JSON Object ที่ประกอบด้วยหมายเลข ID (0, 1, 2...) และข้อความที่แก้ไขแล้ว
+3. คุณต้องตอบกลับมาให้ครบทุก ID ห้ามลบ ห้ามข้าม ห้ามรวมบรรทัดเด็ดขาด
         
-ข้อความต้นฉบับ ({len(lines_to_fix)} บรรทัด):
-{json.dumps(lines_to_fix, ensure_ascii=False)}"""
+ข้อความต้นฉบับ:
+{json.dumps(dict_to_fix, ensure_ascii=False)}"""
         
         try:
             res = client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama3-70b-8192", 
-                temperature=0.0, # ปรับความสร้างสรรค์เป็น 0 เพื่อให้เถรตรงที่สุด
+                temperature=0.0, 
                 response_format={"type": "json_object"}
             )
             
             data = json.loads(res.choices[0].message.content.strip())
-            corrected_lines = data.get("corrected", [])
+            corrected_dict = data.get("corrected", {})
             
-            # ตรวจสอบความถูกต้องของชุดย่อยนั้นๆ
-            if len(corrected_lines) == len(lines_to_fix):
-                for j, c_line in enumerate(corrected_lines):
-                    segments[i+j]["text"] = str(c_line)
+            # ตรวจสอบว่าส่ง ID กลับมาครบตามต้นฉบับเป๊ะๆ
+            if len(corrected_dict) == len(dict_to_fix):
+                for idx, c_line in corrected_dict.items():
+                    segments[i + int(idx)]["text"] = str(c_line)
             else:
-                success_all = False # ถ้ามีแม้แต่ชุดเดียวพลาด จะถือว่าพลาด
+                success_all = False
         except Exception as e:
             success_all = False
             
@@ -184,7 +185,7 @@ else:
     st.sidebar.warning("⚠️ ยังไม่มีเอนจิน โปรดติดตั้ง")
 
 if st.sidebar.button("🔄 ติดตั้ง / อัปเกรดเอนจิน (ซ่อมสระลอย)"):
-    with st.spinner("กำลังดาวน์โหลด FFmpeg รุ่น Full-Engine (ประมาณ 40MB)..."):
+    with st.spinner("กำลังดาวน์โหลด FFmpeg รุ่น Full-Engine..."):
         try:
             if os.path.exists("./ffmpeg"): os.remove("./ffmpeg")
             if os.path.exists("./ffprobe"): os.remove("./ffprobe")
