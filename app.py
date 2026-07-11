@@ -92,7 +92,7 @@ def get_action_keyword_from_ai(client, thai_text):
 
 def fetch_pexels_video(keyword, pexels_key, output_path):
     headers = {"Authorization": pexels_key}
-    url = f"[https://api.pexels.com/videos/search?query=](https://api.pexels.com/videos/search?query=){keyword}&orientation=portrait&per_page=15"
+    url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=15"
     try:
         res = requests.get(url, headers=headers, timeout=10).json()
         if res.get("videos"):
@@ -106,59 +106,58 @@ def fetch_pexels_video(keyword, pexels_key, output_path):
     except Exception: pass
     return False
 
-# 🌟 ฟังก์ชันอัปเกรด V.20: ทำความสะอาดข้อความขยะ + หน่วงเวลาป้องกันโดนบล็อค
+# 🌟 ฟังก์ชันอัปเกรด V.21: ระบบกัดไม่ปล่อย (Auto-Retry 3 รอบ)
 def ai_proofread_segments(client, segments):
     chunk_size = 10
     success_all = True
     
     for i in range(0, len(segments), chunk_size):
         chunk = segments[i:i+chunk_size]
-        
-        # แปลงเป็น Array of Objects ที่มี id ชัดเจน
         data_to_fix = [{"id": str(idx), "text": seg["text"]} for idx, seg in enumerate(chunk)]
         
-        prompt = f"""คุณคือผู้เชี่ยวชาญภาษาไทย หน้าที่คือแก้คำผิดจากการฟัง (เช่น รถ/ลด, หน้า/น่า) 
-ห้ามเปลี่ยนความหมาย ห้ามรวมประโยค
+        prompt = f"""คุณคือผู้เชี่ยวชาญภาษาไทย หน้าที่คือแก้คำผิดจากการฟัง (เช่น รถ/ลด, หน้า/น่า)
+ห้ามเปลี่ยนความหมาย ห้ามรวมประโยคเด็ดขาด
 คำสั่งบังคับ:
 1. ตอบกลับเป็น JSON Object เท่านั้น
-2. รูปแบบ JSON คือ {{"corrected": [{{"id": "0", "text": "ข้อความที่แก้แล้ว"}}, ...]}}
-3. จำนวน object ต้องเท่ากับต้นฉบับเป๊ะ
-        
+2. รูปแบบ JSON คือ {{"corrected": [{{"id": "0", "text": "ข้อความที่แก้"}}, ...]}}
+
 ข้อความต้นฉบับ:
 {json.dumps(data_to_fix, ensure_ascii=False)}"""
         
-        try:
-            res = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model="llama3-70b-8192", 
-                temperature=0.0, 
-                response_format={"type": "json_object"}
-            )
-            
-            content = res.choices[0].message.content.strip()
-            
-            # ลอกคราบ markdown ขยะทิ้ง (ถ้ามี)
-            if content.startswith("```json"): content = content[7:]
-            if content.startswith("```"): content = content[3:]
-            if content.endswith("```"): content = content[:-3]
-            content = content.strip()
-            
-            data = json.loads(content)
-            corrected_list = data.get("corrected", [])
-            
-            if isinstance(corrected_list, list) and len(corrected_list) == len(data_to_fix):
-                for item in corrected_list:
-                    idx = int(item["id"])
-                    c_text = str(item["text"])
-                    segments[i + idx]["text"] = c_text
-            else:
-                success_all = False
-                print("Length mismatch or invalid format")
-        except Exception as e:
+        chunk_success = False
+        
+        # 🔄 ระบบพยายามใหม่ 3 ครั้ง ถ้าระบบล่มหรือตอบมาไม่ครบ
+        for attempt in range(3):
+            try:
+                res = client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="llama3-70b-8192", 
+                    temperature=0.0, 
+                    response_format={"type": "json_object"}
+                )
+                
+                content = res.choices[0].message.content.strip()
+                
+                # ✂️ ตัวลอกคราบข้อความขั้นเทพ ตัดเฉพาะสิ่งที่มีปีกกาครอบ
+                if "{" in content and "}" in content:
+                    content = content[content.find("{"):content.rfind("}")+1]
+                
+                data = json.loads(content)
+                corrected_list = data.get("corrected", [])
+                
+                if isinstance(corrected_list, list) and len(corrected_list) == len(data_to_fix):
+                    for item in corrected_list:
+                        idx = int(item["id"])
+                        segments[i + idx]["text"] = str(item["text"])
+                    chunk_success = True
+                    break # สำเร็จแล้ว หลุดออกจากลูปทันที!
+                else:
+                    time.sleep(2) # ถ้าจำนวนไม่ครบ ให้พัก 2 วิแล้วขอลองใหม่
+            except Exception as e:
+                time.sleep(3) # โดน Rate Limit เตะชัวร์ พักนานขึ้น 3 วิแล้วลุยใหม่
+                
+        if not chunk_success:
             success_all = False
-            print("API Error:", e)
-            
-        time.sleep(1.5) # ⏱️ หน่วงเวลา 1.5 วินาที กัน Groq บล็อคข้อหาพิมพ์รัว!
             
     return segments, success_all
 
