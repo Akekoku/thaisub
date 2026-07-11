@@ -25,16 +25,11 @@ FONT_MAP = {
 
 PROFILE_FILE = "subtitle_profiles.json"
 
+# 🌟 ฟังก์ชันอัปเกรด V.26: บังคับอัปเดตโปรไฟล์เริ่มต้นให้เปิด AI เสมอ!
 def load_profiles():
-    if os.path.exists(PROFILE_FILE):
-        try:
-            with open(PROFILE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except: pass
-    
     default_profiles = {
         "🎬 สไตล์ Tiktok (เด้งพอง ตัวเหลือง)": {
-            "replace": "Save=เซฟ, OK=โอเค", "font": "Kanit Bold", "tc": "#FFFF00", "oc": "#000000",
+            "replace": "แบตเตอรี่กับรถ=แบตเตอรี่ลด, Save=เซฟ, OK=โอเค", "font": "Kanit Bold", "tc": "#FFFF00", "oc": "#000000",
             "bg": "ขอบปกติ", "anim": "เด้งพอง (Pop-up)", "ps": 130, "pd": 150, "fd": 200, 
             "fs": 22, "ot": 2, "mw": 90, "mv": 50, "ll": "🚫 บังคับ 1 บรรทัด", "ai_proof": True
         },
@@ -49,6 +44,17 @@ def load_profiles():
             "fs": 20, "ot": 2, "mw": 80, "mv": 40, "ll": "🚫 บังคับไม่เกิน 2 บรรทัด", "ai_proof": True
         }
     }
+
+    if os.path.exists(PROFILE_FILE):
+        try:
+            with open(PROFILE_FILE, "r", encoding="utf-8") as f:
+                loaded_profs = json.load(f)
+                # 🚀 จุดสำคัญ: บังคับยัดค่าเริ่มต้นตัวใหม่ทับโปรไฟล์หลัก 3 ตัวเสมอ!
+                for k, v in default_profiles.items():
+                    loaded_profs[k] = v
+                return loaded_profs
+        except: pass
+    
     save_profiles(default_profiles)
     return default_profiles
 
@@ -106,7 +112,6 @@ def fetch_pexels_video(keyword, pexels_key, output_path):
     except Exception: pass
     return False
 
-# 🌟 ฟังก์ชันอัปเกรด V.24: ใส่ปลอกคอบังคับ AI ห้ามแอบเปลี่ยนคำศัพท์
 def ai_proofread_segments(client, segments, user_replacements=""):
     chunk_size = 10
     success_all = True
@@ -237,7 +242,6 @@ def get_video_dimensions(video_path):
 client = Groq(api_key=api_key)
 
 def render_subtitle_ui(key_prefix):
-    # 🎯 อัปเดตให้ ai_proof เป็น True สำหรับค่าเริ่มต้นของระบบ
     defaults = {
         "replace": "แบตเตอรี่กับรถ=แบตเตอรี่ลด, Save=เซฟ, OK=โอเค", "font": "Sarabun", "tc": "#FFFFFF", "oc": "#000000", "bg": "ขอบปกติ",
         "anim": "เด้งพอง (Pop-up)", "ps": 130, "pd": 150, "fd": 200, 
@@ -247,7 +251,7 @@ def render_subtitle_ui(key_prefix):
     profiles = load_profiles()
     for p_name, p_data in profiles.items():
         if "ll" not in p_data and "f2l" in p_data: p_data["ll"] = "🚫 บังคับไม่เกิน 2 บรรทัด" if p_data["f2l"] else "ไม่จำกัด (ตามความกว้าง)"
-        if "ai_proof" not in p_data: p_data["ai_proof"] = True # ซ่อมโปรไฟล์เก่าให้เปิด AI เป็น Default
+        if "ai_proof" not in p_data: p_data["ai_proof"] = True 
     
     for k, v in defaults.items():
         if f"{key_prefix}_{k}" not in st.session_state: st.session_state[f"{key_prefix}_{k}"] = v
