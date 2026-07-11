@@ -92,7 +92,7 @@ def get_action_keyword_from_ai(client, thai_text):
 
 def fetch_pexels_video(keyword, pexels_key, output_path):
     headers = {"Authorization": pexels_key}
-    url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=15"
+    url = f"[https://api.pexels.com/videos/search?query=](https://api.pexels.com/videos/search?query=){keyword}&orientation=portrait&per_page=15"
     try:
         res = requests.get(url, headers=headers, timeout=10).json()
         if res.get("videos"):
@@ -106,27 +106,26 @@ def fetch_pexels_video(keyword, pexels_key, output_path):
     except Exception: pass
     return False
 
-# 🌟 ฟังก์ชันอัปเกรด V.19: ผูก ID ติดกับบรรทัดบังคับให้ AI ตอบกลับแบบ 1-to-1
+# 🌟 ฟังก์ชันอัปเกรด V.20: ทำความสะอาดข้อความขยะ + หน่วงเวลาป้องกันโดนบล็อค
 def ai_proofread_segments(client, segments):
-    chunk_size = 10 # ลดลงเหลือ 10 เพื่อความเสถียร 100%
+    chunk_size = 10
     success_all = True
     
     for i in range(0, len(segments), chunk_size):
         chunk = segments[i:i+chunk_size]
         
-        # แปลงข้อความเป็น Dictionary ผูกกับ ID ตัวเลข
-        dict_to_fix = {str(idx): seg["text"] for idx, seg in enumerate(chunk)}
+        # แปลงเป็น Array of Objects ที่มี id ชัดเจน
+        data_to_fix = [{"id": str(idx), "text": seg["text"]} for idx, seg in enumerate(chunk)]
         
-        prompt = f"""คุณคือผู้เชี่ยวชาญพิสูจน์อักษรภาษาไทย หน้าที่คือแก้ไขคำผิดจากการฟังเสียง (คำพ้องเสียง เช่น รถ/ลด, หน้า/น่า, คับ/ครับ) 
-ให้ถูกต้องตามบริบท ห้ามเปลี่ยนความหมายเด็ดขาด
-        
-คำสั่งบังคับสูงสุด: 
-1. ต้องตอบกลับเป็นรูปแบบ JSON Object เท่านั้น
-2. ให้ใช้ key ชื่อ "corrected" และ value เป็น JSON Object ที่ประกอบด้วยหมายเลข ID (0, 1, 2...) และข้อความที่แก้ไขแล้ว
-3. คุณต้องตอบกลับมาให้ครบทุก ID ห้ามลบ ห้ามข้าม ห้ามรวมบรรทัดเด็ดขาด
+        prompt = f"""คุณคือผู้เชี่ยวชาญภาษาไทย หน้าที่คือแก้คำผิดจากการฟัง (เช่น รถ/ลด, หน้า/น่า) 
+ห้ามเปลี่ยนความหมาย ห้ามรวมประโยค
+คำสั่งบังคับ:
+1. ตอบกลับเป็น JSON Object เท่านั้น
+2. รูปแบบ JSON คือ {{"corrected": [{{"id": "0", "text": "ข้อความที่แก้แล้ว"}}, ...]}}
+3. จำนวน object ต้องเท่ากับต้นฉบับเป๊ะ
         
 ข้อความต้นฉบับ:
-{json.dumps(dict_to_fix, ensure_ascii=False)}"""
+{json.dumps(data_to_fix, ensure_ascii=False)}"""
         
         try:
             res = client.chat.completions.create(
@@ -136,377 +135,9 @@ def ai_proofread_segments(client, segments):
                 response_format={"type": "json_object"}
             )
             
-            data = json.loads(res.choices[0].message.content.strip())
-            corrected_dict = data.get("corrected", {})
+            content = res.choices[0].message.content.strip()
             
-            # ตรวจสอบว่าส่ง ID กลับมาครบตามต้นฉบับเป๊ะๆ
-            if len(corrected_dict) == len(dict_to_fix):
-                for idx, c_line in corrected_dict.items():
-                    segments[i + int(idx)]["text"] = str(c_line)
-            else:
-                success_all = False
-        except Exception as e:
-            success_all = False
-            
-    return segments, success_all
-
-# =========================================================
-# 🔒 ระบบความปลอดภัย (Gatekeeper)
-# =========================================================
-st.set_page_config(page_title="AI Studio Pro", page_icon="🎬", layout="wide")
-if "authenticated" not in st.session_state: st.session_state["authenticated"] = False
-if not st.session_state["authenticated"]:
-    st.markdown("## 🔐 ระบบภายในส่วนตัว")
-    user_password = st.text_input("🔑 รหัสผ่าน:", type="password")
-    if st.button("🔓 เข้าสู่ระบบ"):
-        if user_password == st.secrets.get("APP_PASSWORD", "12345"):
-            st.session_state["authenticated"] = True; st.rerun()
-        else: st.error("❌ รหัสผ่านไม่ถูกต้อง!")
-    st.stop()
-
-if "GROQ_API_KEY" in st.secrets: api_key = st.secrets["GROQ_API_KEY"]
-else: st.error("❌ ยังไม่ได้ตั้งค่า Groq API Key"); st.stop()
-pexels_key = st.secrets.get("PEXELS_API_KEY", "")
-
-# =========================================================
-# 🎛️ เมนูสลับโหมดการทำงาน & ระบบอัปเกรดเอนจินสระ
-# =========================================================
-st.sidebar.markdown("## 🛠️ เลือกโหมดการทำงาน")
-app_mode = st.sidebar.radio("สตูดิโอของคุณ:", [
-    "🎭 โหมด 1: สร้างคลิปไร้หน้า (Faceless)", 
-    "🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join & Sub)"
-])
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 🇹🇭 เครื่องมือแก้สระลอย (อัปเกรด)")
-if os.path.exists("./ffmpeg") and os.path.exists("./ffprobe"):
-    st.sidebar.success("✅ มีเอนจินติดตั้งอยู่แล้ว")
-else:
-    st.sidebar.warning("⚠️ ยังไม่มีเอนจิน โปรดติดตั้ง")
-
-if st.sidebar.button("🔄 ติดตั้ง / อัปเกรดเอนจิน (ซ่อมสระลอย)"):
-    with st.spinner("กำลังดาวน์โหลด FFmpeg รุ่น Full-Engine..."):
-        try:
-            if os.path.exists("./ffmpeg"): os.remove("./ffmpeg")
-            if os.path.exists("./ffprobe"): os.remove("./ffprobe")
-            url = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
-            urllib.request.urlretrieve(url, "ffmpeg.tar.xz")
-            with tarfile.open("ffmpeg.tar.xz", "r:xz") as tar: tar.extractall()
-            extracted = [f for f in os.listdir() if "ffmpeg-master" in f and os.path.isdir(f)][0]
-            shutil.copy(os.path.join(extracted, "bin", "ffmpeg"), "./ffmpeg")
-            shutil.copy(os.path.join(extracted, "bin", "ffprobe"), "./ffprobe")
-            os.chmod("./ffmpeg", 0o755); os.chmod("./ffprobe", 0o755)
-            os.remove("ffmpeg.tar.xz"); shutil.rmtree(extracted)
-            st.sidebar.success("✅ อัปเกรดเสร็จสมบูรณ์!")
-            time.sleep(2); st.rerun()
-        except Exception as e: st.sidebar.error(f"❌ เกิดข้อผิดพลาด: {e}")
-
-FFMPEG_CMD = "./ffmpeg" if os.path.exists("./ffmpeg") else "ffmpeg"
-FFPROBE_CMD = "./ffprobe" if os.path.exists("./ffprobe") else "ffprobe"
-
-def get_video_dimensions(video_path):
-    try:
-        cmd = [FFPROBE_CMD, '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=s=x:p=0', video_path]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        width_str, height_str = result.stdout.strip().split('x')
-        return int(width_str), int(height_str)
-    except Exception: return 720, 1280
-
-client = Groq(api_key=api_key)
-
-def render_subtitle_ui(key_prefix):
-    defaults = {
-        "replace": "Save=เซฟ, OK=โอเค", "font": "Sarabun", "tc": "#FFFFFF", "oc": "#000000", "bg": "ขอบปกติ",
-        "anim": "เด้งพอง (Pop-up)", "ps": 130, "pd": 150, "fd": 200, 
-        "fs": 18, "ot": 1, "mw": 100, "mv": 50, "ll": "🚫 บังคับไม่เกิน 2 บรรทัด", "ai_proof": False
-    }
-    
-    profiles = load_profiles()
-    for p_name, p_data in profiles.items():
-        if "ll" not in p_data and "f2l" in p_data: p_data["ll"] = "🚫 บังคับไม่เกิน 2 บรรทัด" if p_data["f2l"] else "ไม่จำกัด (ตามความกว้าง)"
-        if "ai_proof" not in p_data: p_data["ai_proof"] = False
-    
-    for k, v in defaults.items():
-        if f"{key_prefix}_{k}" not in st.session_state: st.session_state[f"{key_prefix}_{k}"] = v
-
-    st.markdown("### 🛠️ ปรับแต่งสไตล์ซับไตเติล")
-    with st.expander("เปิดเครื่องมือปรับแต่ง (ฟอนต์, เอฟเฟกต์, AI)", expanded=True):
-        st.markdown("#### 💾 จัดการโปรไฟล์ซับไตเติล")
-        col_load, col_save = st.columns(2)
-        with col_load:
-            prof_names = ["-- เลือกโปรไฟล์เพื่อโหลด --"] + list(profiles.keys())
-            selected_prof = st.selectbox("📂 โหลดโปรไฟล์ที่บันทึกไว้:", prof_names, key=f"{key_prefix}_sel_prof")
-            if st.button("📥 โหลดมาใช้", key=f"{key_prefix}_load_btn"):
-                if selected_prof != "-- เลือกโปรไฟล์เพื่อโหลด --":
-                    for k, v in profiles[selected_prof].items():
-                        if k in defaults: st.session_state[f"{key_prefix}_{k}"] = v
-                    st.rerun()
-                    
-        with col_save:
-            new_prof_name = st.text_input("💾 บันทึกการตั้งค่าปัจจุบันเป็นโปรไฟล์ใหม่:", placeholder="ตั้งชื่อโปรไฟล์...", key=f"{key_prefix}_new_prof")
-            c_s, c_d = st.columns(2)
-            with c_s:
-                if st.button("💾 บันทึกโปรไฟล์", key=f"{key_prefix}_save_btn"):
-                    if new_prof_name:
-                        profiles[new_prof_name] = {k: st.session_state[f"{key_prefix}_{k}"] for k in defaults.keys()}
-                        save_profiles(profiles)
-                        st.success(f"บันทึก '{new_prof_name}' แล้ว!"); time.sleep(1); st.rerun()
-            with c_d:
-                if st.button("🗑️ ลบโปรไฟล์ที่เลือก", key=f"{key_prefix}_del_btn"):
-                    if selected_prof != "-- เลือกโปรไฟล์เพื่อโหลด --" and selected_prof in profiles:
-                        del profiles[selected_prof]; save_profiles(profiles)
-                        st.success("ลบโปรไฟล์เรียบร้อย!"); time.sleep(1); st.rerun()
-        st.markdown("---")
-
-        st.markdown("#### 🧠 ผู้ช่วย AI ตรวจคำผิดตามบริบท")
-        ai_proof_choice = st.checkbox("เปิดใช้งาน AI พิสูจน์อักษร (ฉลาดมาก แต่อาจใช้เวลาประมวลผลเพิ่ม 5-10 วินาที)", key=f"{key_prefix}_ai_proof")
-        st.markdown("---")
-        
-        st.markdown("#### 📝 แก้ไขคำทับศัพท์ / เปลี่ยนคำผิด (บังคับคำ)")
-        replace_words_input = st.text_input("รูปแบบ (คำเดิม=คำใหม่) คั่นด้วยลูกน้ำ:", key=f"{key_prefix}_replace")
-        st.markdown("---")
-        
-        font_choice = st.selectbox("✒️ ฟอนต์:", list(FONT_MAP.keys()), key=f"{key_prefix}_font")
-        c1, c2, c3 = st.columns(3)
-        with c1: text_color = st.color_picker("🅰️ สีตัวอักษร", key=f"{key_prefix}_tc")
-        with c2: outline_color = st.color_picker("🖍️ สีขอบ", key=f"{key_prefix}_oc")
-        with c3: bg_style = st.selectbox("🔲 พื้นหลัง", ["ขอบปกติ", "แถบกล่องดำรองหลัง"], key=f"{key_prefix}_bg")
-        
-        anim_choice = st.selectbox("🎬 เอฟเฟกต์:", ["ไม่มี", "เด้งพอง (Pop-up)", "ค่อยๆ ปรากฏ (Fade-in)"], key=f"{key_prefix}_anim")
-        if anim_choice == "เด้งพอง (Pop-up)":
-            ca1, ca2 = st.columns(2)
-            with ca1: pop_scale = st.slider("ความขยายตอนเด้ง (%)", 110, 180, key=f"{key_prefix}_ps")
-            with ca2: pop_duration = st.slider("ความเร็วยุบตัว (ms)", 50, 400, key=f"{key_prefix}_pd")
-        elif anim_choice == "ค่อยๆ ปรากฏ (Fade-in)":
-            fade_duration = st.slider("ความเร็ว Fade (ms)", 100, 1000, key=f"{key_prefix}_fd")
-            
-        cl1, cl2 = st.columns(2)
-        with cl1:
-            font_size_choice = st.slider("ขนาดตัวอักษร:", 14, 40, key=f"{key_prefix}_fs")
-            outline_thickness = st.slider("ความหนาขอบ:", 0, 5, key=f"{key_prefix}_ot")
-        with cl2:
-            max_width_pct = st.slider("ความกว้างกรอบข้อความ (%):", 50, 150, key=f"{key_prefix}_mw")
-            margin_v_choice = st.slider("ความสูงจากขอบล่าง:", 20, 200, key=f"{key_prefix}_mv")
-            
-        st.markdown("#### 📏 การจำกัดบรรทัดซับไตเติล")
-        line_options = ["ไม่จำกัด (ตามความกว้าง)", "🚫 บังคับไม่เกิน 2 บรรทัด", "🚫 บังคับ 1 บรรทัด"]
-        line_limit_choice = st.radio("เลือกรูปแบบการแสดงผล:", line_options, horizontal=True, key=f"{key_prefix}_ll")
-        
-        replace_dict = {}
-        if replace_words_input.strip():
-            pairs = replace_words_input.split(',')
-            for pair in pairs:
-                if '=' in pair:
-                    old_w, new_w = pair.split('=', 1)
-                    replace_dict[old_w.strip()] = new_w.strip()
-        
-        return {
-            "font": font_choice, "t_color": text_color, "o_color": outline_color, 
-            "bg_style": bg_style, "anim": anim_choice, 
-            "pop_scale": st.session_state[f"{key_prefix}_ps"], "pop_dur": st.session_state[f"{key_prefix}_pd"], 
-            "fade_dur": st.session_state[f"{key_prefix}_fd"], "size": font_size_choice, 
-            "outline": outline_thickness, "max_w": max_width_pct, "margin_v": margin_v_choice,
-            "line_limit": line_limit_choice, "replacements": replace_dict, "ai_proof": ai_proof_choice
-        }
-
-# =========================================================
-# 🎭 โหมด 1: สร้างคลิปไร้หน้า (Faceless / Storyboard)
-# =========================================================
-if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน้า (Faceless)":
-    st.markdown("## 🎭 โหมดสร้างคลิปไร้หน้า (Storyboard Automation)")
-    faceless_mode = st.radio("เลือกวิธีสร้างวิดีโอพื้นหลัง:", ["ไม่ใช้ (ใช้วิดีโอต้นฉบับ)", "🤖 Pexels AI (ดึงภาพอัตโนมัติ)", "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)"], index=0)
-    scene_target_duration, custom_videos = 8.0, []
-    if faceless_mode != "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)":
-        scene_target_duration = st.slider("⏱️ ความยาวแต่ละฉาก (วินาที)", 4.0, 15.0, 8.0, 1.0)
-        if faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)": custom_videos = st.file_uploader("📂 อัปโหลดคลิป B-Roll จาก Google Labs (MP4)", type=["mp4"], accept_multiple_files=True)
-            
-    sub_config = render_subtitle_ui("mode1")
-    uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์เสียงเล่าเรื่อง (MP3/WAV/MP4)", type=["mp4", "mp3", "wav"])
-
-    if uploaded_file and st.button("🚀 เริ่มผลิตคลิปไร้หน้า"):
-        with st.spinner("กำลังทำงาน..."):
-            file_ext = uploaded_file.name.split('.')[-1].lower()
-            with open(f"raw_upload.{file_ext}", "wb") as f: f.write(uploaded_file.getbuffer())
-            
-            custom_broll_paths = []
-            if custom_videos:
-                for i, vid in enumerate(custom_videos):
-                    p = f"custom_broll_{i}.mp4"
-                    with open(p, "wb") as f: f.write(vid.getbuffer())
-                    custom_broll_paths.append(p)
-
-            if file_ext == "mp3": shutil.copy("raw_upload.mp3", "audio.mp3")
-            elif file_ext == "wav": subprocess.run([FFMPEG_CMD, '-y', '-i', 'raw_upload.wav', '-c:a', 'libmp3lame', 'audio.mp3'], check=True)
-            else: subprocess.run([FFMPEG_CMD, '-y', '-i', 'raw_upload.mp4', '-vn', '-c:a', 'libmp3lame', 'audio.mp3'], check=True)
-
-            with open("audio.mp3", "rb") as audio_file:
-                res_th = client.audio.transcriptions.create(model="whisper-large-v3", file=("audio.mp3", audio_file), response_format="verbose_json", language="th")
-
-            raw_segments = []
-            for seg in res_th.segments:
-                s = seg['start'] if isinstance(seg, dict) else seg.start
-                e = seg['end'] if isinstance(seg, dict) else seg.end
-                t = seg['text'].strip() if isinstance(seg, dict) else seg.text.strip()
-                if t: raw_segments.append({"start": s, "end": e, "text": t})
-
-            if sub_config["ai_proof"]:
-                with st.spinner("🧠 กำลังให้ AI ตรวจทานและแก้คำพ้องเสียง (รอสักครู่)..."):
-                    raw_segments, ai_success = ai_proofread_segments(client, raw_segments)
-                    if ai_success: st.toast("✨ AI แก้ไขคำผิดตามบริบทเรียบร้อยแล้ว!")
-                    else: st.toast("⚠️ มีข้อผิดพลาดบางส่วน! ระบบสำรองข้อความเดิมมาช่วยแล้ว")
-
-            video_width, video_height = (720, 1280) if faceless_mode != "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)" else get_video_dimensions("raw_upload.mp4")
-            
-            actual_font_file = FONT_MAP[sub_config["font"]]
-            actual_pil_font_size = int((sub_config["size"] / 288) * video_height * 0.75)
-            allowed_pixel_width = video_width * (sub_config["max_w"] / 100)
-            ass_font_size = int(sub_config["size"] * (video_height / 288.0))
-            ass_outline = int(sub_config["outline"] * (video_height / 288.0))
-            ass_margin_v = int(sub_config["margin_v"] * (video_height / 288.0))
-            border_style = 3 if sub_config["bg_style"] == "แถบกล่องดำรองหลัง" else 1
-
-            effect_prefix = ""
-            if sub_config["anim"] == "เด้งพอง (Pop-up)": effect_prefix = f"{{\\fscx{sub_config['pop_scale']}\\fscy{sub_config['pop_scale']}\\t(0,{sub_config['pop_dur']},\\fscx100\\fscy100)}}"
-            elif sub_config["anim"] == "ค่อยๆ ปรากฏ (Fade-in)": effect_prefix = f"{{\\fad({sub_config['fade_dur']},0)}}"
-            
-            ass_content = f"""[Script Info]\nScriptType: v4.00+\nPlayResX: {video_width}\nPlayResY: {video_height}\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,{sub_config["font"]},{ass_font_size},{hex_to_ass_color(sub_config["t_color"])},&H0000FFFF,{hex_to_ass_color(sub_config["o_color"])},&H80000000,0,0,0,0,100,100,0,0,{border_style},{ass_outline},0,2,10,10,{ass_margin_v},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"""
-            
-            segments_data_for_subs, scenes, current_scene, s_start, s_idx = [], [], "", 0.0, 1
-            
-            for seg in raw_segments:
-                s, e, t = seg['start'], seg['end'], seg['text']
-                for old_w, new_w in sub_config["replacements"].items(): t = re.sub(re.escape(old_w), new_w, t, flags=re.IGNORECASE)
-                
-                segments_data_for_subs.append((t, s, e))
-                if current_scene == "": s_start = s
-                current_scene += t + " "
-                if (e - s_start) >= scene_target_duration:
-                    scenes.append({"idx": s_idx, "start": s_start, "end": e, "text": current_scene}); s_idx += 1; current_scene = ""
-            if current_scene: scenes.append({"idx": s_idx, "start": s_start, "end": e, "text": current_scene})
-            
-            limit_choice = sub_config["line_limit"]
-            chunk_size = 0
-            if "2 บรรทัด" in limit_choice: chunk_size = 2
-            elif "1 บรรทัด" in limit_choice: chunk_size = 1
-
-            for text_sub, start_time, end_time in segments_data_for_subs:
-                formatted_text = split_text_by_pixel_width(text_sub, font_file=actual_font_file, pil_font_size=actual_pil_font_size, max_width_pixels=allowed_pixel_width)
-                lines = formatted_text.split('\n')
-                
-                if chunk_size > 0 and len(lines) > chunk_size:
-                    chunks = [ "\n".join(lines[j:j+chunk_size]) for j in range(0, len(lines), chunk_size) ]
-                    t_start = start_time
-                    total_chars = max(1, sum(len(c.replace('\n','')) for c in chunks))
-                    for chunk in chunks:
-                        c_dur = (end_time - start_time) * (len(chunk.replace('\n','')) / total_chars)
-                        t_end = t_start + c_dur
-                        ass_content += f"Dialogue: 0,{format_ass_timestamp(t_start)},{format_ass_timestamp(t_end)},Default,,0,0,0,,{effect_prefix}{chunk.replace('\n', '\\N')}\n"
-                        t_start = t_end
-                else: 
-                    ass_content += f"Dialogue: 0,{format_ass_timestamp(start_time)},{format_ass_timestamp(end_time)},Default,,0,0,0,,{effect_prefix}{formatted_text.replace('\n', '\\N')}\n"
-            
-            with open("subs.ass", "w", encoding="utf-8") as f: f.write(ass_content)
-
-            if faceless_mode != "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)":
-                with open("concat.txt", "w") as f:
-                    for i, sc in enumerate(scenes):
-                        c_path = f"clip_{sc['idx']}.mp4"
-                        sc_dur = sc['end'] - sc['start']
-                        if faceless_mode == "🤖 Pexels AI (ดึงภาพอัตโนมัติ)":
-                            kw = get_action_keyword_from_ai(client, sc["text"])
-                            if fetch_pexels_video(kw, pexels_key, "temp.mp4"): subprocess.run([FFMPEG_CMD, '-y', '-i', 'temp.mp4', '-ss', '0', '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height}', '-c:v', 'libx264', '-an', c_path])
-                            else: subprocess.run([FFMPEG_CMD, '-y', '-f', 'lavfi', '-i', f'color=c=black:s={video_width}x{video_height}:d={sc_dur}', '-c:v', 'libx264', c_path])
-                        else:
-                            in_b = custom_broll_paths[i % len(custom_broll_paths)] if custom_broll_paths else None
-                            if in_b: subprocess.run([FFMPEG_CMD, '-y', '-i', in_b, '-ss', '0', '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height}', '-c:v', 'libx264', '-an', c_path])
-                            else: subprocess.run([FFMPEG_CMD, '-y', '-f', 'lavfi', '-i', f'color=c=black:s={video_width}x{video_height}:d={sc_dur}', '-c:v', 'libx264', c_path])
-                        f.write(f"file '{c_path}'\n")
-                subprocess.run([FFMPEG_CMD, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c:v', 'libx264', 'bg.mp4'])
-                subprocess.run([FFMPEG_CMD, '-y', '-i', 'bg.mp4', '-i', 'audio.mp3', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-c:a', 'aac', 'output.mp4'])
-            else: subprocess.run([FFMPEG_CMD, '-y', '-i', 'raw_upload.mp4', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-c:a', 'aac', 'output.mp4'])
-
-        st.success("🎉 คลิปเสร็จสมบูรณ์!")
-        with open("output.mp4", "rb") as f: st.download_button("📥 ดาวน์โหลดวิดีโอ", f, "faceless.mp4", "video/mp4")
-
-# =========================================================
-# 🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join Video & Sub)
-# =========================================================
-elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join & Sub)":
-    st.markdown("## 🎞️ โหมดต่อคลิปพร้อมเสียง & ฝังซับอัตโนมัติ")
-    st.info("อัปโหลดคลิปวิดีโอ (MP4) หลายๆ คลิปที่มีเสียงพูดอยู่แล้ว ระบบจะนำมาเรียงต่อกันและเจาะเสียงไปทำซับไตเติลให้ตลอดทั้งคลิปครับ")
-    
-    sub_config = render_subtitle_ui("mode2")
-    uploaded_videos = st.file_uploader("📂 อัปโหลดวิดีโอ (MP4)", type=["mp4"], accept_multiple_files=True)
-
-    if uploaded_videos and st.button("🚀 รวมคลิปและสร้างซับไตเติล"):
-        with st.spinner("กำลังต่อคลิปวิดีโอ..."):
-            with open("concat_join.txt", "w", encoding="utf-8") as f:
-                for i, vid in enumerate(uploaded_videos):
-                    v_path = f"part_{i}.mp4"
-                    with open(v_path, "wb") as f_vid: f_vid.write(vid.getbuffer())
-                    f.write(f"file '{v_path}'\n")
-            
-            subprocess.run([FFMPEG_CMD, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat_join.txt', '-c', 'copy', 'combined.mp4'], check=True)
-            subprocess.run([FFMPEG_CMD, '-y', '-i', 'combined.mp4', '-vn', '-c:a', 'libmp3lame', 'audio_joined.mp3'], check=True)
-            
-        with st.spinner("กำลังฟังเสียงและถอดความ..."):
-            with open("audio_joined.mp3", "rb") as audio_file:
-                res_th = client.audio.transcriptions.create(model="whisper-large-v3", file=("audio_joined.mp3", audio_file), response_format="verbose_json", language="th")
-            
-            raw_segments = []
-            for seg in res_th.segments:
-                s = seg['start'] if isinstance(seg, dict) else seg.start
-                e = seg['end'] if isinstance(seg, dict) else seg.end
-                t = seg['text'].strip() if isinstance(seg, dict) else seg.text.strip()
-                if t: raw_segments.append({"start": s, "end": e, "text": t})
-
-            if sub_config["ai_proof"]:
-                with st.spinner("🧠 กำลังให้ AI ตรวจทานและแก้คำพ้องเสียง (รอสักครู่)..."):
-                    raw_segments, ai_success = ai_proofread_segments(client, raw_segments)
-                    if ai_success: st.toast("✨ AI แก้ไขคำผิดตามบริบทเรียบร้อยแล้ว!")
-                    else: st.toast("⚠️ มีข้อผิดพลาดบางส่วน! ระบบสำรองข้อความเดิมมาช่วยแล้ว")
-
-            v_w, v_h = get_video_dimensions("combined.mp4")
-            actual_font_file = FONT_MAP[sub_config["font"]]
-            actual_pil_font_size = int((sub_config["size"] / 288) * v_h * 0.75)
-            allowed_pixel_width = v_w * (sub_config["max_w"] / 100)
-            ass_font_size = int(sub_config["size"] * (v_h / 288.0))
-            ass_outline = int(sub_config["outline"] * (v_h / 288.0))
-            ass_margin_v = int(sub_config["margin_v"] * (v_h / 288.0))
-            border_style = 3 if sub_config["bg_style"] == "แถบกล่องดำรองหลัง" else 1
-
-            effect_prefix = ""
-            if sub_config["anim"] == "เด้งพอง (Pop-up)": effect_prefix = f"{{\\fscx{sub_config['pop_scale']}\\fscy{sub_config['pop_scale']}\\t(0,{sub_config['pop_dur']}\\fscx100\\fscy100)}}"
-            elif sub_config["anim"] == "ค่อยๆ ปรากฏ (Fade-in)": effect_prefix = f"{{\\fad({sub_config['fade_dur']},0)}}"
-            
-            ass = f"""[Script Info]\nScriptType: v4.00+\nPlayResX: {v_w}\nPlayResY: {v_h}\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,{sub_config["font"]},{ass_font_size},{hex_to_ass_color(sub_config["t_color"])},&H0000FFFF,{hex_to_ass_color(sub_config["o_color"])},&H80000000,0,0,0,0,100,100,0,0,{border_style},{ass_outline},0,2,10,10,{ass_margin_v},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"""
-            
-            limit_choice = sub_config["line_limit"]
-            chunk_size = 0
-            if "2 บรรทัด" in limit_choice: chunk_size = 2
-            elif "1 บรรทัด" in limit_choice: chunk_size = 1
-            
-            for seg in raw_segments:
-                s, e, t = seg['start'], seg['end'], seg['text']
-                for old_w, new_w in sub_config["replacements"].items(): t = re.sub(re.escape(old_w), new_w, t, flags=re.IGNORECASE)
-                
-                formatted_text = split_text_by_pixel_width(t, font_file=actual_font_file, pil_font_size=actual_pil_font_size, max_width_pixels=allowed_pixel_width)
-                lines = formatted_text.split('\n')
-                
-                if chunk_size > 0 and len(lines) > chunk_size:
-                    chunks = [ "\n".join(lines[j:j+chunk_size]) for j in range(0, len(lines), chunk_size) ]
-                    t_start = s
-                    total_chars = max(1, sum(len(c.replace('\n','')) for c in chunks))
-                    for chunk in chunks:
-                        c_dur = (e - s) * (len(chunk.replace('\n','')) / total_chars)
-                        t_end = t_start + c_dur
-                        ass += f"Dialogue: 0,{format_ass_timestamp(t_start)},{format_ass_timestamp(t_end)},Default,,0,0,0,,{effect_prefix}{chunk.replace('\n', '\\N')}\n"
-                        t_start = t_end
-                else: 
-                    ass += f"Dialogue: 0,{format_ass_timestamp(s)},{format_ass_timestamp(e)},Default,,0,0,0,,{effect_prefix}{formatted_text.replace('\n', '\\N')}\n"
-            
-            with open("subs_joined.ass", "w", encoding="utf-8") as f: f.write(ass)
-            subprocess.run([FFMPEG_CMD, '-y', '-i', 'combined.mp4', '-vf', 'subtitles=subs_joined.ass:fontsdir=.', '-c:v', 'libx264', '-c:a', 'aac', 'output_joined.mp4'])
-            
-        st.success("🎉 ประกอบคลิปและฝังซับไตเติลเสร็จสมบูรณ์!")
-        with open("output_joined.mp4", "rb") as f: st.download_button("📥 ดาวน์โหลดวิดีโอ", f, "joined_video_with_subs.mp4", "video/mp4")
+            # ลอกคราบ markdown ขยะทิ้ง (ถ้ามี)
+            if content.startswith("```json"): content = content[7:]
+            if content.startswith("```"): content = content[3:]
+            if content.endswith("
