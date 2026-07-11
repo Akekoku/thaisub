@@ -12,6 +12,7 @@ import time
 import re
 import urllib.request
 import tarfile
+import json
 
 # =========================================================
 # ⚙️ ส่วนตั้งค่าเริ่มต้น & ฟังก์ชันช่วยเหลือ (Helper Functions)
@@ -21,6 +22,40 @@ FONT_MAP = {
     "Noto Sans Thai": "NotoSansThai-Regular.ttf", "Noto Sans Thai Medium": "NotoSansThai-Medium.ttf",
     "Noto Sans Thai Bold": "NotoSansThai-Bold.ttf", "Sarabun": "Sarabun.ttf", "Chonburi": "Chonburi.ttf", "Mali": "Mali.ttf"
 }
+
+PROFILE_FILE = "subtitle_profiles.json"
+
+def load_profiles():
+    if os.path.exists(PROFILE_FILE):
+        try:
+            with open(PROFILE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except: pass
+    
+    # 🌟 โปรไฟล์เริ่มต้น 3 แบบ (ถ้าเพิ่งเปิดแอปครั้งแรก)
+    default_profiles = {
+        "🎬 สไตล์ Tiktok (เด้งพอง ตัวเหลือง)": {
+            "replace": "Save=เซฟ, OK=โอเค", "font": "Kanit Bold", "tc": "#FFFF00", "oc": "#000000",
+            "bg": "ขอบปกติ", "anim": "เด้งพอง (Pop-up)", "ps": 130, "pd": 150, "fd": 200, 
+            "fs": 22, "ot": 2, "mw": 90, "mv": 50, "f2l": True
+        },
+        "🎞️ สไตล์ Cinematic (เรียบหรู กล่องดำ)": {
+            "replace": "Save=เซฟ", "font": "Sarabun", "tc": "#FFFFFF", "oc": "#000000",
+            "bg": "แถบกล่องดำรองหลัง", "anim": "ค่อยๆ ปรากฏ (Fade-in)", "ps": 130, "pd": 150, "fd": 300, 
+            "fs": 16, "ot": 0, "mw": 100, "mv": 30, "f2l": False
+        },
+        "🎀 สไตล์ Vlog (น่ารัก ฟอนต์ลายมือ)": {
+            "replace": "Save=เซฟ", "font": "Mali", "tc": "#FF69B4", "oc": "#FFFFFF",
+            "bg": "ขอบปกติ", "anim": "เด้งพอง (Pop-up)", "ps": 120, "pd": 200, "fd": 200, 
+            "fs": 20, "ot": 2, "mw": 80, "mv": 40, "f2l": True
+        }
+    }
+    save_profiles(default_profiles)
+    return default_profiles
+
+def save_profiles(profs):
+    with open(PROFILE_FILE, "w", encoding="utf-8") as f:
+        json.dump(profs, f, ensure_ascii=False, indent=4)
 
 def hex_to_ass_color(hex_str, alpha_hex="00"):
     hex_str = hex_str.lstrip('#')
@@ -48,7 +83,7 @@ def split_text_by_pixel_width(text, font_file, pil_font_size, max_width_pixels):
 
 def get_action_keyword_from_ai(client, thai_text):
     try:
-        prompt = f"Read this Thai scene description: '{thai_text}'. Create a 2 to 4 word English search query for Pexels Stock Video (literal, simple action phrases). Output ONLY the search query."
+        prompt = f"Read this Thai scene description: '{thai_text}'. Create a 2 to 4 word English search query for Pexels Stock Video. Output ONLY the search query."
         res = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="llama3-8b-8192", temperature=0.2)
         time.sleep(2.5) 
         return res.choices[0].message.content.strip().replace('"', '')
@@ -78,7 +113,7 @@ def fetch_pexels_video(keyword, pexels_key, output_path):
 st.set_page_config(page_title="AI Studio Pro", page_icon="🎬", layout="wide")
 if "authenticated" not in st.session_state: st.session_state["authenticated"] = False
 if not st.session_state["authenticated"]:
-    st.markdown("## 🔐 ระบบภายในส่วนตัว (Restricted Access)")
+    st.markdown("## 🔐 ระบบภายในส่วนตัว")
     user_password = st.text_input("🔑 รหัสผ่าน:", type="password")
     if st.button("🔓 เข้าสู่ระบบ"):
         if user_password == st.secrets.get("APP_PASSWORD", "12345"):
@@ -99,7 +134,6 @@ app_mode = st.sidebar.radio("สตูดิโอของคุณ:", [
     "🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join & Sub)"
 ])
 
-# 🚀 โค้ดใหม่: ดึงเอนจินรุ่นที่มี HarfBuzz 100%
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🇹🇭 เครื่องมือแก้สระลอย (อัปเกรด)")
 if os.path.exists("./ffmpeg") and os.path.exists("./ffprobe"):
@@ -110,26 +144,19 @@ else:
 if st.sidebar.button("🔄 ติดตั้ง / อัปเกรดเอนจิน (ซ่อมสระลอย)"):
     with st.spinner("กำลังดาวน์โหลด FFmpeg รุ่น Full-Engine (ประมาณ 40MB)..."):
         try:
-            # ลบตัวเก่าทิ้งก่อน (ถ้ามี)
             if os.path.exists("./ffmpeg"): os.remove("./ffmpeg")
             if os.path.exists("./ffprobe"): os.remove("./ffprobe")
-            
-            # โหลดเวอร์ชัน Full จาก yt-dlp builds ที่รองรับภาษาไทย
             url = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
             urllib.request.urlretrieve(url, "ffmpeg.tar.xz")
             with tarfile.open("ffmpeg.tar.xz", "r:xz") as tar:
                 tar.extractall()
-            
-            # เข้าไปหาไฟล์ในโฟลเดอร์ bin
             extracted = [f for f in os.listdir() if "ffmpeg-master" in f and os.path.isdir(f)][0]
             shutil.copy(os.path.join(extracted, "bin", "ffmpeg"), "./ffmpeg")
             shutil.copy(os.path.join(extracted, "bin", "ffprobe"), "./ffprobe")
             os.chmod("./ffmpeg", 0o755)
             os.chmod("./ffprobe", 0o755)
-            
             os.remove("ffmpeg.tar.xz")
             shutil.rmtree(extracted)
-            
             st.sidebar.success("✅ อัปเกรดเสร็จสมบูรณ์! สระไทยพร้อมใช้งาน")
             time.sleep(2)
             st.rerun()
@@ -150,32 +177,87 @@ def get_video_dimensions(video_path):
 client = Groq(api_key=api_key)
 
 def render_subtitle_ui(key_prefix):
+    # 📌 ค่ามาตรฐาน (Defaults) สำหรับเซ็ตตัวแปร
+    defaults = {
+        "replace": "Save=เซฟ, OK=โอเค, AI=เอไอ, Content=คอนเทนต์",
+        "font": "Sarabun", "tc": "#FFFFFF", "oc": "#000000", "bg": "ขอบปกติ",
+        "anim": "เด้งพอง (Pop-up)", "ps": 130, "pd": 150, "fd": 200, 
+        "fs": 18, "ot": 1, "mw": 100, "mv": 50, "f2l": True
+    }
+    
+    # กำหนดค่าเริ่มต้นลง Session State ถ้ายังไม่มี
+    for k, v in defaults.items():
+        if f"{key_prefix}_{k}" not in st.session_state:
+            st.session_state[f"{key_prefix}_{k}"] = v
+
     st.markdown("### 🛠️ ปรับแต่งสไตล์ซับไตเติล")
-    with st.expander("เปิดเครื่องมือปรับแต่ง (ฟอนต์, สี, เอฟเฟกต์, แก้คำผิด)", expanded=True):
-        st.markdown("#### 📝 แก้ไขคำทับศัพท์ / เปลี่ยนคำผิด")
-        replace_words_input = st.text_input("รูปแบบ (คำเดิม=คำใหม่) คั่นด้วยลูกน้ำ:", value="Save=เซฟ, OK=โอเค, AI=เอไอ, Content=คอนเทนต์", key=f"{key_prefix}_replace")
+    with st.expander("เปิดเครื่องมือปรับแต่ง (ฟอนต์, สี, เอฟเฟกต์, จัดการโปรไฟล์)", expanded=True):
+        
+        # --- 💾 ระบบบันทึกและโหลดโปรไฟล์ ---
+        st.markdown("#### 💾 จัดการโปรไฟล์ซับไตเติล (Save/Load Profiles)")
+        profiles = load_profiles()
+        
+        col_load, col_save = st.columns(2)
+        with col_load:
+            prof_names = ["-- เลือกโปรไฟล์เพื่อโหลด --"] + list(profiles.keys())
+            selected_prof = st.selectbox("📂 โหลดโปรไฟล์ที่บันทึกไว้:", prof_names, key=f"{key_prefix}_sel_prof")
+            if st.button("📥 โหลดมาใช้", key=f"{key_prefix}_load_btn"):
+                if selected_prof != "-- เลือกโปรไฟล์เพื่อโหลด --":
+                    for k, v in profiles[selected_prof].items():
+                        st.session_state[f"{key_prefix}_{k}"] = v
+                    st.rerun()
+                    
+        with col_save:
+            new_prof_name = st.text_input("💾 บันทึกการตั้งค่าปัจจุบันเป็นโปรไฟล์ใหม่:", placeholder="ตั้งชื่อโปรไฟล์ เช่น สายฮา", key=f"{key_prefix}_new_prof")
+            c_s, c_d = st.columns(2)
+            with c_s:
+                if st.button("💾 บันทึกโปรไฟล์", key=f"{key_prefix}_save_btn"):
+                    if new_prof_name:
+                        profiles[new_prof_name] = {k: st.session_state[f"{key_prefix}_{k}"] for k in defaults.keys()}
+                        save_profiles(profiles)
+                        st.success(f"บันทึก '{new_prof_name}' แล้ว!")
+                        time.sleep(1)
+                        st.rerun()
+            with c_d:
+                if st.button("🗑️ ลบโปรไฟล์ที่เลือก", key=f"{key_prefix}_del_btn"):
+                    if selected_prof != "-- เลือกโปรไฟล์เพื่อโหลด --" and selected_prof in profiles:
+                        del profiles[selected_prof]
+                        save_profiles(profiles)
+                        st.success("ลบโปรไฟล์เรียบร้อย!")
+                        time.sleep(1)
+                        st.rerun()
         st.markdown("---")
-        font_choice = st.selectbox("✒️ ฟอนต์:", list(FONT_MAP.keys()), index=8, key=f"{key_prefix}_font")
+
+        # --- 🎛️ เครื่องมือปรับแต่ง UI ---
+        st.markdown("#### 📝 แก้ไขคำทับศัพท์ / เปลี่ยนคำผิด")
+        replace_words_input = st.text_input("รูปแบบ (คำเดิม=คำใหม่) คั่นด้วยลูกน้ำ:", key=f"{key_prefix}_replace")
+        st.markdown("---")
+        
+        font_choice = st.selectbox("✒️ ฟอนต์:", list(FONT_MAP.keys()), key=f"{key_prefix}_font")
+        
         c1, c2, c3 = st.columns(3)
-        with c1: text_color = st.color_picker("🅰️ สีตัวอักษร", "#FFFFFF", key=f"{key_prefix}_tc")
-        with c2: outline_color = st.color_picker("🖍️ สีขอบ", "#000000", key=f"{key_prefix}_oc")
+        with c1: text_color = st.color_picker("🅰️ สีตัวอักษร", key=f"{key_prefix}_tc")
+        with c2: outline_color = st.color_picker("🖍️ สีขอบ", key=f"{key_prefix}_oc")
         with c3: bg_style = st.selectbox("🔲 พื้นหลัง", ["ขอบปกติ", "แถบกล่องดำรองหลัง"], key=f"{key_prefix}_bg")
-        anim_choice = st.selectbox("🎬 เอฟเฟกต์:", ["ไม่มี", "เด้งพอง (Pop-up)", "ค่อยๆ ปรากฏ (Fade-in)"], index=1, key=f"{key_prefix}_anim")
-        pop_scale, pop_duration, fade_duration = 130, 150, 200
+        
+        anim_choice = st.selectbox("🎬 เอฟเฟกต์:", ["ไม่มี", "เด้งพอง (Pop-up)", "ค่อยๆ ปรากฏ (Fade-in)"], key=f"{key_prefix}_anim")
+        
         if anim_choice == "เด้งพอง (Pop-up)":
             ca1, ca2 = st.columns(2)
-            with ca1: pop_scale = st.slider("ความขยายตอนเด้ง (%)", 110, 180, 130, 5, key=f"{key_prefix}_ps")
-            with ca2: pop_duration = st.slider("ความเร็วยุบตัว (ms)", 50, 400, 150, 10, key=f"{key_prefix}_pd")
+            with ca1: pop_scale = st.slider("ความขยายตอนเด้ง (%)", 110, 180, key=f"{key_prefix}_ps")
+            with ca2: pop_duration = st.slider("ความเร็วยุบตัว (ms)", 50, 400, key=f"{key_prefix}_pd")
         elif anim_choice == "ค่อยๆ ปรากฏ (Fade-in)":
-            fade_duration = st.slider("ความเร็ว Fade (ms)", 100, 1000, 200, 50, key=f"{key_prefix}_fd")
+            fade_duration = st.slider("ความเร็ว Fade (ms)", 100, 1000, key=f"{key_prefix}_fd")
+            
         cl1, cl2 = st.columns(2)
         with cl1:
-            font_size_choice = st.slider("ขนาดตัวอักษร:", 14, 40, 18, key=f"{key_prefix}_fs")
-            outline_thickness = st.slider("ความหนาขอบ:", 0, 5, 1, key=f"{key_prefix}_ot")
+            font_size_choice = st.slider("ขนาดตัวอักษร:", 14, 40, key=f"{key_prefix}_fs")
+            outline_thickness = st.slider("ความหนาขอบ:", 0, 5, key=f"{key_prefix}_ot")
         with cl2:
-            max_width_pct = st.slider("ความกว้างกรอบข้อความ (%):", 50, 150, 100, key=f"{key_prefix}_mw")
-            margin_v_choice = st.slider("ความสูงจากขอบล่าง:", 20, 200, 50, key=f"{key_prefix}_mv")
-        force_max_2_lines = st.checkbox("🚫 บังคับซับไม่เกิน 2 บรรทัด", value=True, key=f"{key_prefix}_f2l")
+            max_width_pct = st.slider("ความกว้างกรอบข้อความ (%):", 50, 150, key=f"{key_prefix}_mw")
+            margin_v_choice = st.slider("ความสูงจากขอบล่าง:", 20, 200, key=f"{key_prefix}_mv")
+            
+        force_max_2_lines = st.checkbox("🚫 บังคับซับไม่เกิน 2 บรรทัด", key=f"{key_prefix}_f2l")
         
         replace_dict = {}
         if replace_words_input.strip():
@@ -187,8 +269,11 @@ def render_subtitle_ui(key_prefix):
         
         return {
             "font": font_choice, "t_color": text_color, "o_color": outline_color, 
-            "bg_style": bg_style, "anim": anim_choice, "pop_scale": pop_scale, 
-            "pop_dur": pop_duration, "fade_dur": fade_duration, "size": font_size_choice, 
+            "bg_style": bg_style, "anim": anim_choice, 
+            "pop_scale": st.session_state[f"{key_prefix}_ps"], 
+            "pop_dur": st.session_state[f"{key_prefix}_pd"], 
+            "fade_dur": st.session_state[f"{key_prefix}_fd"], 
+            "size": font_size_choice, 
             "outline": outline_thickness, "max_w": max_width_pct, "margin_v": margin_v_choice,
             "force_2_lines": force_max_2_lines, "replacements": replace_dict
         }
