@@ -290,7 +290,6 @@ def get_file_size_mb(file_path):
 
 client = Groq(api_key=api_key)
 
-# 🌟 ปรับปรุง UI ให้เป็นระเบียบและใช้งานง่ายขึ้น
 def render_subtitle_ui(key_prefix):
     defaults = {
         "replace": "แบตเตอรี่กับรถ=แบตเตอรี่ลด, Save=เซฟ, OK=โอเค", "font": "Sarabun", "tc": "#FFFFFF", "oc": "#000000", "bg": "ขอบปกติ",
@@ -322,11 +321,15 @@ def render_subtitle_ui(key_prefix):
             col_anim, col_anim_opt1, col_anim_opt2 = st.columns(3)
             with col_anim: anim_choice = st.selectbox("🎬 เอฟเฟกต์แอนิเมชัน", ["ไม่มี", "เด้งพอง (Pop-up)", "ค่อยๆ ปรากฏ (Fade-in)"], key=f"{key_prefix}_anim")
             
+            # 🌟 แก้บั๊ก UnboundLocalError: ประกาศค่าตัวแปรให้ครบในทุกเงื่อนไข
             if anim_choice == "เด้งพอง (Pop-up)":
                 with col_anim_opt1: pop_scale = st.slider("ความขยายตอนเด้ง (%)", 110, 180, key=f"{key_prefix}_ps")
                 with col_anim_opt2: pop_duration = st.slider("ความเร็วยุบตัว (ms)", 50, 400, key=f"{key_prefix}_pd")
+                fade_duration = st.session_state[f"{key_prefix}_fd"] # ดึงค่าเก่ามารอไว้
             elif anim_choice == "ค่อยๆ ปรากฏ (Fade-in)":
                 with col_anim_opt1: fade_duration = st.slider("ความเร็ว Fade (ms)", 100, 1000, key=f"{key_prefix}_fd")
+                pop_scale = st.session_state[f"{key_prefix}_ps"]     # ดึงค่าเก่ามารอไว้
+                pop_duration = st.session_state[f"{key_prefix}_pd"]  # ดึงค่าเก่ามารอไว้
             else:
                 pop_scale = st.session_state[f"{key_prefix}_ps"]
                 pop_duration = st.session_state[f"{key_prefix}_pd"]
