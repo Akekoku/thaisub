@@ -200,6 +200,14 @@ def ai_proofread_segments(client, segments, user_replacements=""):
             
     return segments, success_all, debug_logs
 
+# 🌟 ฟังก์ชัน Callback สำหรับตอนกดโหลดโปรไฟล์ (แก้บั๊ก StreamlitAPIException)
+def handle_load_profile(key_prefix, profiles, defaults):
+    selected = st.session_state.get(f"{key_prefix}_sel_prof")
+    if selected and selected != "-- เลือกโปรไฟล์ --":
+        for k, v in profiles[selected].items():
+            if k in defaults:
+                st.session_state[f"{key_prefix}_{k}"] = v
+
 # =========================================================
 # 🔒 ระบบความปลอดภัย (Gatekeeper)
 # =========================================================
@@ -303,8 +311,10 @@ def render_subtitle_ui(key_prefix):
         if "ai_proof" not in p_data: p_data["ai_proof"] = True 
         if "auto_cut" not in p_data: p_data["auto_cut"] = "ปิด (เก็บช่วงเงียบไว้ปกติ)"
     
+    # 🌟 สร้างค่าเริ่มต้นใน session_state ให้ครบทุกตัวก่อนวาดหน้าจอ
     for k, v in defaults.items():
-        if f"{key_prefix}_{k}" not in st.session_state: st.session_state[f"{key_prefix}_{k}"] = v
+        if f"{key_prefix}_{k}" not in st.session_state: 
+            st.session_state[f"{key_prefix}_{k}"] = v
 
     with st.expander("⚙️ แผงควบคุมและตั้งค่าสตูดิโอ (คลิกเพื่อเปิด/ปิด)", expanded=False):
         tab_design, tab_ai, tab_profile = st.tabs(["🎨 ดีไซน์ซับไตเติล", "🤖 AI & การตัดต่อ", "💾 จัดการโปรไฟล์"])
@@ -321,15 +331,14 @@ def render_subtitle_ui(key_prefix):
             col_anim, col_anim_opt1, col_anim_opt2 = st.columns(3)
             with col_anim: anim_choice = st.selectbox("🎬 เอฟเฟกต์แอนิเมชัน", ["ไม่มี", "เด้งพอง (Pop-up)", "ค่อยๆ ปรากฏ (Fade-in)"], key=f"{key_prefix}_anim")
             
-            # 🌟 แก้บั๊ก UnboundLocalError: ประกาศค่าตัวแปรให้ครบในทุกเงื่อนไข
             if anim_choice == "เด้งพอง (Pop-up)":
                 with col_anim_opt1: pop_scale = st.slider("ความขยายตอนเด้ง (%)", 110, 180, key=f"{key_prefix}_ps")
                 with col_anim_opt2: pop_duration = st.slider("ความเร็วยุบตัว (ms)", 50, 400, key=f"{key_prefix}_pd")
-                fade_duration = st.session_state[f"{key_prefix}_fd"] # ดึงค่าเก่ามารอไว้
+                fade_duration = st.session_state[f"{key_prefix}_fd"]
             elif anim_choice == "ค่อยๆ ปรากฏ (Fade-in)":
                 with col_anim_opt1: fade_duration = st.slider("ความเร็ว Fade (ms)", 100, 1000, key=f"{key_prefix}_fd")
-                pop_scale = st.session_state[f"{key_prefix}_ps"]     # ดึงค่าเก่ามารอไว้
-                pop_duration = st.session_state[f"{key_prefix}_pd"]  # ดึงค่าเก่ามารอไว้
+                pop_scale = st.session_state[f"{key_prefix}_ps"]
+                pop_duration = st.session_state[f"{key_prefix}_pd"]
             else:
                 pop_scale = st.session_state[f"{key_prefix}_ps"]
                 pop_duration = st.session_state[f"{key_prefix}_pd"]
@@ -357,18 +366,16 @@ def render_subtitle_ui(key_prefix):
             ai_proof_choice = st.checkbox("เปิดใช้งาน AI พิสูจน์อักษร", key=f"{key_prefix}_ai_proof")
             replace_words_input = st.text_area("📝 แก้ไขคำทับศัพท์ (คำเดิม=คำใหม่ คั่นด้วยลูกน้ำ)", help="ตัวอย่าง: แบตเตอรี่กับรถ=แบตเตอรี่ลด, Save=เซฟ", key=f"{key_prefix}_replace", height=68)
 
-        # TAB 3: จัดการโปรไฟล์
+        # TAB 3: จัดการโปรไฟล์ (🌟 ปรับใช้ Callback สำหรับปุ่มโหลด)
         with tab_profile:
             st.markdown("#### 📥 โหลดโปรไฟล์")
             prof_names = ["-- เลือกโปรไฟล์ --"] + list(profiles.keys())
             col_sel, col_load_btn = st.columns([3, 1])
-            with col_sel: selected_prof = st.selectbox("เลือกโปรไฟล์ที่บันทึกไว้:", prof_names, key=f"{key_prefix}_sel_prof", label_visibility="collapsed")
+            with col_sel: 
+                st.selectbox("เลือกโปรไฟล์ที่บันทึกไว้:", prof_names, key=f"{key_prefix}_sel_prof", label_visibility="collapsed")
             with col_load_btn: 
-                if st.button("📥 โหลด", key=f"{key_prefix}_load_btn", use_container_width=True):
-                    if selected_prof != "-- เลือกโปรไฟล์ --":
-                        for k, v in profiles[selected_prof].items():
-                            if k in defaults: st.session_state[f"{key_prefix}_{k}"] = v
-                        st.rerun()
+                # 🌟 เรียกใช้ callback_load ทันทีที่กดปุ่ม เพื่อเปลี่ยนค่าก่อน UI จะเริ่มวาดใหม่
+                st.button("📥 โหลด", key=f"{key_prefix}_load_btn", on_click=handle_load_profile, args=(key_prefix, profiles, defaults), use_container_width=True)
 
             st.markdown("#### 💾 บันทึกโปรไฟล์ใหม่")
             col_name, col_save_btn, col_del_btn = st.columns([2, 1, 1])
@@ -381,8 +388,9 @@ def render_subtitle_ui(key_prefix):
                         st.success(f"บันทึก '{new_prof_name}' แล้ว!"); time.sleep(1); st.rerun()
             with col_del_btn:
                 if st.button("🗑️ ลบ", key=f"{key_prefix}_del_btn", use_container_width=True):
-                    if selected_prof != "-- เลือกโปรไฟล์ --" and selected_prof in profiles:
-                        del profiles[selected_prof]; save_profiles(profiles)
+                    selected_for_del = st.session_state.get(f"{key_prefix}_sel_prof")
+                    if selected_for_del != "-- เลือกโปรไฟล์ --" and selected_for_del in profiles:
+                        del profiles[selected_for_del]; save_profiles(profiles)
                         st.success("ลบทิ้งแล้ว!"); time.sleep(1); st.rerun()
 
             st.markdown("---")
