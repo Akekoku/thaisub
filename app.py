@@ -63,7 +63,7 @@ def format_ass_timestamp(seconds):
     if centis == 100: secs += 1; centis = 0
     return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
 
-# 🌟 V.53: The Ultimate PUA Engine (สุดยอดอัลกอริทึมแก้สระลอย)
+# 🌟 V.53/54: The Ultimate PUA Engine (สุดยอดอัลกอริทึมแก้สระลอย)
 def fix_thai_floating_vowels(text):
     if not text: return text
     
@@ -169,8 +169,15 @@ def ai_proofread_segments(client, segments, user_replacements=""):
     success_all = True
     for i in range(0, len(segments), chunk_size):
         chunk = segments[i:i+chunk_size]
-        data_to_fix = [{"id": str(idx), "text": seg["text"]} for idx, enumerate(chunk)]
-        prompt = f"""คุณคือ AI ผู้ช่วยตรวจสอบซับไตเติล\nหน้าที่ของคุณ: ตรวจสอบและแก้ไขเฉพาะ "คำสะกดผิดไวยากรณ์"\nกฎเหล็ก: ห้ามเปลี่ยนความหมาย ตอบกลับเป็น JSON: {{"corrected": [{{"id": "0", "text": "ข้อความ"}}]}}\nคำใบ้เพิ่มเติม (ทับศัพท์): {user_replacements}\nข้อความต้นฉบับ:\n{json.dumps(data_to_fix, ensure_ascii=False)}"""
+        # 🌟 แก้ไขบั๊ก SyntaxError ตรงนี้ครับ
+        data_to_fix = [{"id": str(idx), "text": seg["text"]} for idx, seg in enumerate(chunk)]
+        
+        prompt = f"""คุณคือ AI ผู้ช่วยตรวจสอบซับไตเติล
+หน้าที่ของคุณ: ตรวจสอบและแก้ไขเฉพาะ "คำสะกดผิดไวยากรณ์" เท่านั้น
+กฎเหล็กขั้นเด็ดขาด: ห้ามเปลี่ยนความหมาย ห้ามลบคำ ตอบกลับเป็น JSON: {{"corrected": [{{"id": "0", "text": "ข้อความ"}}]}}
+คำใบ้เพิ่มเติม (ทับศัพท์): {user_replacements}\n
+ข้อความต้นฉบับ:
+{json.dumps(data_to_fix, ensure_ascii=False)}"""
         for attempt in range(3):
             try:
                 res = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="llama-3.1-8b-instant", temperature=0.0, response_format={"type": "json_object"})
