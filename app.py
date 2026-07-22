@@ -43,7 +43,7 @@ def load_profiles():
         "🦸‍♂️ สไตล์ พี่เอกฮีโร่ไอที": {
             "replace": "แบตเตอรี่กับรถ=แบตเตอรี่ลด, Save=เซฟ, OK=โอเค", "font": "Kanit Bold", "tc": "#FFFF00", "oc": "#000000",
             "bg": "ขอบปกติ", "anim": "ค่อยๆ ปรากฏ (Fade-in)", "ps": 130, "pd": 150, "fd": 200, 
-            "fs": 20, "ot": 1, "mw": 80, "mv": 50, "ll": "🚫 บังคับ 1 บรรทัด", "ai_proof": True, "auto_cut": "ปิด (เก็บช่วงเงียบไว้ปกติ)"
+            "fs": 20, "ot": 1, "mw": 90, "mv": 50, "ll": "🚫 บังคับ 1 บรรทัด", "ai_proof": True, "auto_cut": "ปิด (เก็บช่วงเงียบไว้ปกติ)"
         }
     }
     if os.path.exists(PROFILE_FILE):
