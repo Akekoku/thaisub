@@ -39,7 +39,7 @@ def load_profiles():
             "bg": "แถบกล่องดำรองหลัง", "anim": "ค่อยๆ ปรากฏ (Fade-in)", "ps": 130, "pd": 150, "fd": 300, 
             "fs": 16, "ot": 0, "mw": 100, "mv": 30, "ll": "ไม่จำกัด (ตามความกว้าง)", "ai_proof": True, "auto_cut": "ปิด (เก็บช่วงเงียบไว้ปกติ)"
         },
-        # 🌟 เพิ่มโปรไฟล์ใหม่: พี่เอกฮีโร่ไอที
+        # 🌟 โปรไฟล์ใหม่: พี่เอกฮีโร่ไอที
         "🦸‍♂️ สไตล์ พี่เอกฮีโร่ไอที": {
             "replace": "แบตเตอรี่กับรถ=แบตเตอรี่ลด, Save=เซฟ, OK=โอเค", "font": "Kanit Bold", "tc": "#FFFF00", "oc": "#000000",
             "bg": "ขอบปกติ", "anim": "ค่อยๆ ปรากฏ (Fade-in)", "ps": 130, "pd": 150, "fd": 200, 
@@ -380,7 +380,10 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
         if faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)": 
             custom_videos = st.file_uploader("📂 อัปโหลดคลิป B-Roll (MP4)", type=["mp4"], accept_multiple_files=True)
             
-    if uploaded_file and st.button("🎧 ขั้นตอนที่ 1: ถอดเสียงและเตรียมสคริปต์", use_container_width=True, type="secondary"):
+    # 🌟 V.57: Placeholder กันกดซ้ำ โหมด 1 ขั้นตอนที่ 1
+    step1_ph_m1 = st.empty()
+    if uploaded_file and step1_ph_m1.button("🎧 ขั้นตอนที่ 1: ถอดเสียงและเตรียมสคริปต์", use_container_width=True, type="secondary", key="step1_m1"):
+        step1_ph_m1.button("⏳ กำลังประมวลผล AI... (ห้ามกดซ้ำ)", use_container_width=True, type="secondary", disabled=True, key="step1_m1_disabled")
         with st.spinner("กำลังถอดเสียงและวิเคราะห์ข้อความ..."):
             file_ext = uploaded_file.name.split('.')[-1].lower()
             raw_path = f"raw_upload.{file_ext}"
@@ -429,8 +432,10 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
         sub_config = render_subtitle_ui("mode1")
 
         st.markdown("### 4️⃣ เรนเดอร์และพรีวิวงาน")
-        if st.button("🎬 ขั้นตอนที่ 2: สร้างพรีวิววิดีโอ", use_container_width=True, type="primary"):
-            
+        # 🌟 V.57: Placeholder กันกดซ้ำ โหมด 1 ขั้นตอนที่ 2
+        render_ph_m1 = st.empty()
+        if render_ph_m1.button("🎬 ขั้นตอนที่ 2: สร้างพรีวิววิดีโอ", use_container_width=True, type="primary", key="render_m1"):
+            render_ph_m1.button("⏳ กำลังเรนเดอร์วิดีโอ... (ห้ามกดซ้ำ)", use_container_width=True, type="primary", disabled=True, key="render_m1_disabled")
             ensure_ffmpeg_engine()
             ACTIVE_FFMPEG = "./ffmpeg" if os.path.exists("./ffmpeg") else "ffmpeg"
 
@@ -449,7 +454,7 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                                 merged_times[-1]['end'] = max(merged_times[-1]['end'], e_cut)
                                 merged_times[-1]['segments'].append(seg)
                             else: merged_times.append({'start': s_cut, 'end': e_cut, 'segments': [seg]})
-                    if merged_times and orig_dur_process > 0 and orig_dur_process - merged_times[-1]['end'] <= 0.0: merged_times[-1]['end'] = orig_dur_process
+                    if merged_times and orig_dur_process > 0 and orig_dur_process - merged_times[-1]['end'] <= 4.0: merged_times[-1]['end'] = orig_dur_process
                     if merged_times:
                         filter_complex, concat_inputs = "", ""
                         for i, b in enumerate(merged_times):
@@ -539,7 +544,10 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
     st.markdown("### 1️⃣ อัปโหลดไฟล์วิดีโอ")
     uploaded_videos = st.file_uploader("📂 อัปโหลดวิดีโอที่ต้องการนำมาต่อกัน (MP4)", type=["mp4"], accept_multiple_files=True)
     
-    if uploaded_videos and st.button("🎧 ขั้นตอนที่ 1: รวมคลิปและถอดเสียง", use_container_width=True, type="secondary"):
+    # 🌟 V.57: Placeholder กันกดซ้ำ โหมด 2 ขั้นตอนที่ 1
+    step1_ph_m2 = st.empty()
+    if uploaded_videos and step1_ph_m2.button("🎧 ขั้นตอนที่ 1: รวมคลิปและถอดเสียง", use_container_width=True, type="secondary", key="step1_m2"):
+        step1_ph_m2.button("⏳ กำลังประมวลผล AI... (ห้ามกดซ้ำ)", use_container_width=True, type="secondary", disabled=True, key="step1_m2_disabled")
         with st.spinner("กำลังต่อคลิปวิดีโอและถอดเสียง..."):
             with open("concat_join.txt", "w", encoding="utf-8") as f:
                 for i, vid in enumerate(uploaded_videos):
@@ -588,8 +596,10 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
         sub_config = render_subtitle_ui("mode2")
 
         st.markdown("### 4️⃣ เรนเดอร์และพรีวิวงาน")
-        if st.button("🎬 ขั้นตอนที่ 2: สร้างพรีวิววิดีโอ", use_container_width=True, type="primary"):
-            
+        # 🌟 V.57: Placeholder กันกดซ้ำ โหมด 2 ขั้นตอนที่ 2
+        render_ph_m2 = st.empty()
+        if render_ph_m2.button("🎬 ขั้นตอนที่ 2: สร้างพรีวิววิดีโอ", use_container_width=True, type="primary", key="render_m2"):
+            render_ph_m2.button("⏳ กำลังเรนเดอร์วิดีโอ... (ห้ามกดซ้ำ)", use_container_width=True, type="primary", disabled=True, key="render_m2_disabled")
             ensure_ffmpeg_engine()
             ACTIVE_FFMPEG = "./ffmpeg" if os.path.exists("./ffmpeg") else "ffmpeg"
 
