@@ -374,7 +374,8 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
     faceless_mode = st.radio("พื้นหลังวิดีโอ:", ["ไม่ใช้ (ใช้วิดีโอต้นฉบับ)", "🤖 Pexels AI (ดึงภาพอัตโนมัติ)", "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)"], horizontal=True)
     scene_target_duration, custom_videos = 8.0, []
     if faceless_mode != "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)":
-        scene_target_duration = st.slider("⏱️ ความยาวแต่ละฉาก (วินาที)", 4.0, 15.0, 8.0, 1.0)
+        # 🌟 ปรับแก้ตรงนี้: เปลี่ยนค่าต่ำสุดให้เลื่อนลงมาได้ถึง 2.0 วินาที (เริ่มที่ 3.0 วินาที)
+        scene_target_duration = st.slider("⏱️ ความยาวแต่ละฉาก (วินาที)", 2.0, 15.0, 3.0, 0.5)
         if faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)": 
             custom_videos = st.file_uploader("📂 อัปโหลดคลิป B-Roll (MP4)", type=["mp4"], accept_multiple_files=True)
             
