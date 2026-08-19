@@ -190,22 +190,39 @@ def clean_whisper_segments(segments):
         cleaned.append(seg)
     return cleaned
 
+# 🌟 แก้ไขจุดที่ 1: อัปเกรดพรอมต์ AI ให้ดุขึ้น บังคับใช้คำจากสคริปต์ต้นฉบับ 100%
 def ai_proofread_segments(client, segments, user_replacements="", reference_script=""):
     chunk_size = 10
-    ref_instruction = ""
-    if reference_script.strip():
-        ref_instruction = f"\n⚠️ กฎสำคัญ: ฉันมีสคริปต์ที่ถูกต้องให้คุณอ้างอิงด้านล่างนี้ ให้คุณนำคำจากสคริปต์อ้างอิงมาแทนที่คำที่ AI ฟังผิดให้ตรงกันเป๊ะที่สุด โดยห้ามเปลี่ยนเวลา (id)\n\n[สคริปต์อ้างอิงต้นฉบับ]\n{reference_script}\n"
-    
     for i in range(0, len(segments), chunk_size):
         chunk = segments[i:i+chunk_size]
         data_to_fix = [{"id": str(idx), "text": seg["text"]} for idx, seg in enumerate(chunk)]
         
-        prompt = f"""คุณคือ AI ผู้ช่วยตรวจสอบซับไตเติล
-หน้าที่ของคุณ: ตรวจสอบและแก้ไขเฉพาะ "คำสะกดผิดไวยากรณ์" หรือปรับแก้ตามสคริปต์อ้างอิง
-กฎเหล็กขั้นเด็ดขาด: ห้ามเปลี่ยนความหมาย ห้ามลบคำ ตอบกลับเป็น JSON: {{"corrected": [{{"id": "0", "text": "ข้อความ"}}]}}
-คำใบ้เพิ่มเติม (ทับศัพท์): {user_replacements}{ref_instruction}\n
+        if reference_script.strip():
+            # พรอมต์เวอร์ชันบังคับเทียบสคริปต์
+            prompt = f"""คุณคือผู้เชี่ยวชาญด้านการแก้ไขซับไตเติลภาษาไทย
+กฎเหล็กขั้นเด็ดขาด:
+1. ด้านล่างนี้คือ "สคริปต์ต้นฉบับที่ถูกต้อง 100%"
+[สคริปต์ต้นฉบับ]
+{reference_script}
+
+2. ฉันจะให้ "ข้อความที่ AI ถอดเสียงมาผิด" (เช่น มักจะพิมพ์ มาวแว, มีชาชีพ แทนที่จะเป็น มัลแวร์, มิจฉาชีพ)
+3. หน้าที่ของคุณคือ นำคำที่ถูกต้องจากสคริปต์ต้นฉบับ มาแทนที่คำที่แกะเสียงผิดให้ตรงกันเป๊ะ! ห้ามลบคำทิ้ง ห้ามเปลี่ยนเวลา(id)
+คำทับศัพท์เพิ่มเติมที่ต้องใช้: {user_replacements}
+
+[ข้อความที่ต้องแก้ไข (JSON)]
+{json.dumps(data_to_fix, ensure_ascii=False)}
+
+ส่งกลับเฉพาะ JSON รูปแบบนี้เท่านั้น:
+{{"corrected": [{{"id": "0", "text": "ข้อความที่แก้ตามสคริปต์แล้ว"}}]}}"""
+        else:
+            # พรอมต์เวอร์ชันแก้คำผิดทั่วไป (กรณีไม่ได้ใส่สคริปต์)
+            prompt = f"""คุณคือ AI ผู้ช่วยตรวจสอบซับไตเติล
+หน้าที่ของคุณ: ตรวจสอบและแก้ไขเฉพาะ "คำสะกดผิดไวยากรณ์" เท่านั้น
+กฎเหล็ก: ห้ามเปลี่ยนความหมาย ห้ามลบคำ ตอบกลับเป็น JSON: {{"corrected": [{{"id": "0", "text": "ข้อความ"}}]}}
+คำทับศัพท์: {user_replacements}\n
 ข้อความต้นฉบับ:
 {json.dumps(data_to_fix, ensure_ascii=False)}"""
+
         for attempt in range(3):
             try:
                 res = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="llama-3.1-8b-instant", temperature=0.0, response_format={"type": "json_object"})
@@ -532,7 +549,6 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                     with open("concat.txt", "w") as f:
                         for i, sc in enumerate(scenes):
                             c_path, sc_dur = f"clip_{sc['idx']}.mp4", sc['end'] - sc['start']
-                            # 🌟 แก้ไขจุดที่ 1: บังคับวนลูปคลิปสั้น (-stream_loop -1) และจัดระเบียบเฟรมเรต (fps=30)
                             if faceless_mode == "🤖 Pexels AI (ดึงภาพอัตโนมัติ)":
                                 if fetch_pexels_video(get_action_keyword_from_ai(client, sc["text"]), pexels_key, "temp.mp4"): 
                                     subprocess.run([ACTIVE_FFMPEG, '-y', '-stream_loop', '-1', '-i', 'temp.mp4', '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path], check=True)
@@ -556,15 +572,17 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
             st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
             st.markdown("### 🖥️ พรีวิวผลลัพธ์")
             
-            col_vid1, col_vid2 = st.columns(2)
-            with col_vid1:
+            # 🌟 แก้ไขจุดที่ 2: สร้างคอลัมน์ตีคอกให้วิดีโอเล็กลงอยู่ตรงกลาง
+            col_space1, col_vid, col_space2 = st.columns([1.5, 2, 1.5])
+            with col_vid:
                 st.video("output.mp4")
-                with open("output.mp4", "rb") as f: 
-                    st.download_button("📥 ดาวน์โหลดวิดีโอ (MP4)", f, "faceless_output.mp4", "video/mp4", type="primary", use_container_width=True)
-            with col_vid2:
-                st.info("💡 นำไฟล์ .SRT นี้ไปอัปโหลดลง Facebook หรือ YouTube เพื่อเปิดใช้งานระบบซับหลายภาษาอัตโนมัติ")
-                with open("subtitles.srt", "rb") as f:
-                    st.download_button("📝 ดาวน์โหลดไฟล์ซับไตเติล (.SRT)", f, "subtitles.srt", "text/plain", use_container_width=True)
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    with open("output.mp4", "rb") as f: 
+                        st.download_button("📥 โหลดวิดีโอ (MP4)", f, "faceless_output.mp4", "video/mp4", type="primary", use_container_width=True)
+                with col_btn2:
+                    with open("subtitles.srt", "rb") as f:
+                        st.download_button("📝 โหลดไฟล์ (.SRT)", f, "subtitles.srt", "text/plain", use_container_width=True)
 
 # =========================================================
 # 🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join Video & Sub)
@@ -597,7 +615,6 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                     v_path = f"part_{i}.mp4"
                     with open(raw_v_path, "wb") as f_vid: f_vid.write(vid.getbuffer())
                     
-                    # 🌟 แก้ไขจุดที่ 2: บังคับเฟรมเรต 30fps ป้องกันภาพกระตุกตอนต่อคลิป
                     if apply_trim:
                         subprocess.run([FFMPEG_CMD, '-y', '-i', raw_v_path, '-t', str(trim_duration), 
                                         '-vf', 'fps=30,format=yuv420p', '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', v_path], check=True)
@@ -729,12 +746,14 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
             st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
             st.markdown("### 🖥️ พรีวิวผลลัพธ์")
             
-            col_vid1, col_vid2 = st.columns(2)
-            with col_vid1:
+            # 🌟 แก้ไขจุดที่ 2: สร้างคอลัมน์ตีคอกให้วิดีโอเล็กลงอยู่ตรงกลาง
+            col_space1, col_vid, col_space2 = st.columns([1.5, 2, 1.5])
+            with col_vid:
                 st.video("output_joined.mp4")
-                with open("output_joined.mp4", "rb") as f: 
-                    st.download_button("📥 ดาวน์โหลดวิดีโอ (MP4)", f, "joined_video_with_subs.mp4", "video/mp4", type="primary", use_container_width=True)
-            with col_vid2:
-                st.info("💡 นำไฟล์ .SRT นี้ไปอัปโหลดลง Facebook หรือ YouTube เพื่อเปิดใช้งานระบบซับหลายภาษาอัตโนมัติ")
-                with open("subtitles_m2.srt", "rb") as f:
-                    st.download_button("📝 ดาวน์โหลดไฟล์ซับไตเติล (.SRT)", f, "subtitles.srt", "text/plain", use_container_width=True)
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    with open("output_joined.mp4", "rb") as f: 
+                        st.download_button("📥 โหลดวิดีโอ (MP4)", f, "joined_video_with_subs.mp4", "video/mp4", type="primary", use_container_width=True)
+                with col_btn2:
+                    with open("subtitles_m2.srt", "rb") as f:
+                        st.download_button("📝 โหลดไฟล์ (.SRT)", f, "subtitles.srt", "text/plain", use_container_width=True)
