@@ -148,28 +148,55 @@ def split_text_by_pixel_width(text, font_file, pil_font_size, max_width_pixels):
 
 def get_action_keyword_from_ai(client, thai_text):
     try:
-        prompt = f"Read this Thai scene description: '{thai_text}'. Create a 2 to 4 word English search query for Pexels Stock Video. Output ONLY the search query."
+        prompt = f"Read this Thai scene description: '{thai_text}'. Create a 2 to 4 word English search query for Stock Video. Output ONLY the search query."
         res = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="llama-3.1-8b-instant", temperature=0.2)
-        time.sleep(2.5) 
+        time.sleep(2.0) 
         return res.choices[0].message.content.strip().replace('"', '')
     except Exception:
-        time.sleep(2.5)
-        return random.choice(["cinematic landscape", "people walking", "vintage object"])
+        time.sleep(2.0)
+        return random.choice(["cinematic landscape", "city life", "modern technology", "people working"])
 
 def fetch_pexels_video(keyword, pexels_key, output_path):
+    if not pexels_key:
+        return False
     headers = {"Authorization": pexels_key}
     url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=15"
     try:
         res = requests.get(url, headers=headers, timeout=10).json()
         if res.get("videos"):
-            videos = res["videos"]; random.shuffle(videos)
+            videos = res["videos"]
+            random.shuffle(videos)
             for v in videos:
                 for f in v.get("video_files", []):
                     if f.get("file_type") == "video/mp4" and f.get("width") and f.get("width") >= 720:
                         v_res = requests.get(f.get("link"), timeout=15)
-                        with open(output_path, "wb") as f_out: f_out.write(v_res.content)
+                        with open(output_path, "wb") as f_out:
+                            f_out.write(v_res.content)
                         return True
-    except Exception: pass
+    except Exception:
+        pass
+    return False
+
+# 🌟 ฟังก์ชันใหม่: ดึงวิดีโอจาก Pixabay API
+def fetch_pixabay_video(keyword, pixabay_key, output_path):
+    if not pixabay_key:
+        return False
+    url = f"https://pixabay.com/api/videos/?key={pixabay_key}&q={requests.utils.quote(keyword)}&per_page=15"
+    try:
+        res = requests.get(url, timeout=10).json()
+        if res.get("hits"):
+            hits = res["hits"]
+            random.shuffle(hits)
+            for h in hits:
+                videos_dict = h.get("videos", {})
+                chosen = videos_dict.get("large") or videos_dict.get("medium") or videos_dict.get("small")
+                if chosen and chosen.get("url"):
+                    v_res = requests.get(chosen["url"], timeout=15)
+                    with open(output_path, "wb") as f_out:
+                        f_out.write(v_res.content)
+                    return True
+    except Exception:
+        pass
     return False
 
 def clean_whisper_segments(segments):
@@ -203,7 +230,7 @@ def ai_proofread_segments(client, segments, user_replacements="", reference_scri
 [สคริปต์ต้นฉบับ]
 {reference_script}
 
-2. ฉันจะให้ "ข้อความที่ AI ถอดเสียงมาผิด" (เช่น มักจะพิมพ์ มาวแว, มีชาชีพ แทนที่จะเป็น มัลแวร์, มิจฉาชีพ)
+2. ฉันจะให้ "ข้อความที่ AI ถอดเสียงมาผิด"
 3. หน้าที่ของคุณคือ นำคำที่ถูกต้องจากสคริปต์ต้นฉบับ มาแทนที่คำที่แกะเสียงผิดให้ตรงกันเป๊ะ! ห้ามลบคำทิ้ง ห้ามเปลี่ยนเวลา(id)
 คำทับศัพท์เพิ่มเติมที่ต้องใช้: {user_replacements}
 
@@ -264,7 +291,9 @@ if not st.session_state["authenticated"]:
 
 if "GROQ_API_KEY" in st.secrets: api_key = st.secrets["GROQ_API_KEY"]
 else: st.error("❌ ยังไม่ได้ตั้งค่า Groq API Key"); st.stop()
+
 pexels_key = st.secrets.get("PEXELS_API_KEY", "")
+pixabay_key = st.secrets.get("PIXABAY_API_KEY", "")
 client = Groq(api_key=api_key)
 
 # =========================================================
@@ -400,16 +429,21 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
     st.markdown("### 1️⃣ อัปโหลดและตั้งค่าฉาก")
     uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์เสียงพากย์ (MP3/WAV/MP4)", type=["mp4", "mp3", "wav"])
     
-    # 🌟 ฟีเจอร์ใหม่: เพิ่มระบบรับไฟล์เสียงเพลงคลอ (BGM)
     st.markdown("#### 🎵 เพิ่มเสียงเพลงคลอ (BGM)")
     bgm_file_m1 = st.file_uploader("อัปโหลดไฟล์เพลงคลอ (MP3/WAV) - *ไม่บังคับ*", type=["mp3", "wav"], key="m1_bgm")
     if bgm_file_m1:
-        bgm_volume_m1 = st.slider("🔊 ระดับเสียงเพลงคลอ (%) *แนะนำ 15-20% เพื่อไม่กลบเสียงพากย์*", 1, 100, 15, key="m1_bgm_vol")
+        bgm_volume_m1 = st.slider("🔊 ระดับเสียงเพลงคลอ (%) *แนะนำ 15-20%*", 1, 100, 15, key="m1_bgm_vol")
     else:
         bgm_volume_m1 = 15
 
-    st.markdown("#### 🖼️ ตั้งค่าวิดีโอพื้นหลัง")
-    faceless_mode = st.radio("แหล่งที่มาวิดีโอ:", ["ไม่ใช้ (ใช้วิดีโอต้นฉบับ)", "🤖 Pexels AI (ดึงภาพอัตโนมัติ)", "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)"], horizontal=True)
+    # 🌟 เพิ่มตัวเลือก Pixabay AI
+    st.markdown("#### 🖼️ แหล่งที่มาของวิดีโอพื้นหลัง")
+    faceless_mode = st.radio(
+        "เลือกแหล่งดึงภาพวิดีโอ:", 
+        ["ไม่ใช้ (ใช้วิดีโอต้นฉบับ)", "🤖 Pexels AI (ดึงคลิปจาก Pexels)", "🟢 Pixabay AI (ดึงคลิปจาก Pixabay)", "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)"], 
+        horizontal=True
+    )
+    
     scene_target_duration, custom_videos = 8.0, []
     if faceless_mode != "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)":
         scene_target_duration = st.slider("⏱️ ความยาวแต่ละฉาก (วินาที)", 2.0, 15.0, 3.0, 0.5)
@@ -487,7 +521,6 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                 with open("subtitles.srt", "w", encoding="utf-8") as srt_file:
                     srt_file.write(srt_content)
                 
-                # 🌟 ระบบ Audio Mixing: จัดการเพลงคลอถ้าอัปโหลดมา
                 final_audio_input = "audio.mp3"
                 if bgm_file_m1:
                     with st.spinner("🎵 กำลังมิกซ์เสียงพากย์กับเพลงคลอ..."):
@@ -568,23 +601,30 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                     with open("concat.txt", "w") as f:
                         for i, sc in enumerate(scenes):
                             c_path, sc_dur = f"clip_{sc['idx']}.mp4", sc['end'] - sc['start']
-                            if faceless_mode == "🤖 Pexels AI (ดึงภาพอัตโนมัติ)":
-                                if fetch_pexels_video(get_action_keyword_from_ai(client, sc["text"]), pexels_key, "temp.mp4"): 
-                                    subprocess.run([ACTIVE_FFMPEG, '-y', '-stream_loop', '-1', '-i', 'temp.mp4', '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path], check=True)
-                                else: 
-                                    subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'lavfi', '-i', f'color=c=black:s={video_width}x{video_height}:d={sc_dur}', '-vf', 'fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', c_path], check=True)
-                            else:
+                            keyword = get_action_keyword_from_ai(client, sc["text"])
+                            
+                            fetched = False
+                            if "Pexels" in faceless_mode:
+                                fetched = fetch_pexels_video(keyword, pexels_key, "temp.mp4")
+                            elif "Pixabay" in faceless_mode:
+                                fetched = fetch_pixabay_video(keyword, pixabay_key, "temp.mp4")
+
+                            if fetched:
+                                subprocess.run([ACTIVE_FFMPEG, '-y', '-stream_loop', '-1', '-i', 'temp.mp4', '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path], check=True)
+                            elif faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)":
                                 subprocess.run([ACTIVE_FFMPEG, '-y', '-stream_loop', '-1', '-i', f"custom_broll_{i % len(custom_videos)}.mp4", '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path], check=True)
+                            else:
+                                subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'lavfi', '-i', f'color=c=black:s={video_width}x{video_height}:d={sc_dur}', '-vf', 'fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', c_path], check=True)
+                                
                             f.write(f"file '{c_path}'\n")
+                            
                     subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 'bg.mp4'], check=True)
                     
-                    # ใช้ final_audio_input ที่มิกซ์เพลงคลอเรียบร้อยแล้ว
                     if "🔥" in export_mode:
                         subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', final_audio_input, '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
                     else:
                         subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', final_audio_input, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
                 else: 
-                    # ใช้ final_audio_input ที่มิกซ์เพลงคลอเรียบร้อยแล้ว
                     if "🔥" in export_mode:
                         subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
                     else:
@@ -622,7 +662,6 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
     with col_t2:
         trim_duration = st.slider("⏱️ ความยาวต่อคลิป (วินาที)", 1.0, 10.0, 3.0, 0.5, disabled=not apply_trim)
         
-    # 🌟 ฟีเจอร์ใหม่: เพิ่มระบบรับไฟล์เสียงเพลงคลอ (BGM)
     st.markdown("#### 🎵 เพิ่มเสียงเพลงคลอ (BGM)")
     bgm_file_m2 = st.file_uploader("อัปโหลดไฟล์เพลงคลอ (MP3/WAV) - *ไม่บังคับ*", type=["mp3", "wav"], key="m2_bgm")
     if bgm_file_m2:
@@ -710,7 +749,6 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                 with open("subtitles_m2.srt", "w", encoding="utf-8") as srt_file:
                     srt_file.write(srt_content)
                     
-                # 🌟 ระบบ Audio Mixing: จัดการเพลงคลอถ้าอัปโหลดมาในโหมด 2
                 final_audio_input = "audio_joined.mp3"
                 if bgm_file_m2:
                     with st.spinner("🎵 กำลังมิกซ์เสียงวิดีโอกับเพลงคลอ..."):
@@ -778,7 +816,6 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                 
                 with open("subs_joined.ass", "w", encoding="utf-8") as f: f.write(ass)
                 
-                # ใช้ final_audio_input ที่มิกซ์เพลงคลอเรียบร้อยแล้วแทนเสียงต้นฉบับ
                 if "🔥" in export_mode:
                     subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs_joined.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'], check=True)
                 else:
