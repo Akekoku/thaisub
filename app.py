@@ -69,6 +69,18 @@ def format_ass_timestamp(seconds):
     if centis == 100: secs += 1; centis = 0
     return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
 
+# 🌟 เพิ่มฟังก์ชันแปลงเวลาเป็นรูปแบบ SRT สำหรับ Facebook
+def generate_srt_content(segments):
+    srt = ""
+    for i, seg in enumerate(segments):
+        def format_srt_time(secs):
+            h, m, s = int(secs // 3600), int((secs % 3600) // 60), int(secs % 60)
+            ms = int(round((secs - int(secs)) * 1000))
+            if ms == 1000: s += 1; ms = 0
+            return f"{h:02}:{m:02}:{s:02},{ms:03}"
+        srt += f"{i+1}\n{format_srt_time(seg['start'])} --> {format_srt_time(seg['end'])}\n{seg['text']}\n\n"
+    return srt
+
 def fix_thai_floating_vowels(text):
     if not text: return text
     text = normalize_thai(text)
@@ -179,17 +191,21 @@ def clean_whisper_segments(segments):
         cleaned.append(seg)
     return cleaned
 
-def ai_proofread_segments(client, segments, user_replacements=""):
+# 🌟 อัปเกรด AI Proofread ให้รองรับสคริปต์อ้างอิง (Reference Script)
+def ai_proofread_segments(client, segments, user_replacements="", reference_script=""):
     chunk_size = 10
-    success_all = True
+    ref_instruction = ""
+    if reference_script.strip():
+        ref_instruction = f"\n⚠️ กฎสำคัญ: ฉันมีสคริปต์ที่ถูกต้องให้คุณอ้างอิงด้านล่างนี้ ให้คุณนำคำจากสคริปต์อ้างอิงมาแทนที่คำที่ AI ฟังผิดให้ตรงกันเป๊ะที่สุด โดยห้ามเปลี่ยนเวลา (id)\n\n[สคริปต์อ้างอิงต้นฉบับ]\n{reference_script}\n"
+    
     for i in range(0, len(segments), chunk_size):
         chunk = segments[i:i+chunk_size]
         data_to_fix = [{"id": str(idx), "text": seg["text"]} for idx, seg in enumerate(chunk)]
         
         prompt = f"""คุณคือ AI ผู้ช่วยตรวจสอบซับไตเติล
-หน้าที่ของคุณ: ตรวจสอบและแก้ไขเฉพาะ "คำสะกดผิดไวยากรณ์" เท่านั้น
+หน้าที่ของคุณ: ตรวจสอบและแก้ไขเฉพาะ "คำสะกดผิดไวยากรณ์" หรือปรับแก้ตามสคริปต์อ้างอิง
 กฎเหล็กขั้นเด็ดขาด: ห้ามเปลี่ยนความหมาย ห้ามลบคำ ตอบกลับเป็น JSON: {{"corrected": [{{"id": "0", "text": "ข้อความ"}}]}}
-คำใบ้เพิ่มเติม (ทับศัพท์): {user_replacements}\n
+คำใบ้เพิ่มเติม (ทับศัพท์): {user_replacements}{ref_instruction}\n
 ข้อความต้นฉบับ:
 {json.dumps(data_to_fix, ensure_ascii=False)}"""
         for attempt in range(3):
@@ -374,12 +390,14 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
     faceless_mode = st.radio("พื้นหลังวิดีโอ:", ["ไม่ใช้ (ใช้วิดีโอต้นฉบับ)", "🤖 Pexels AI (ดึงภาพอัตโนมัติ)", "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)"], horizontal=True)
     scene_target_duration, custom_videos = 8.0, []
     if faceless_mode != "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)":
-        # 🌟 ปรับแก้ตรงนี้: เปลี่ยนค่าต่ำสุดให้เลื่อนลงมาได้ถึง 2.0 วินาที (เริ่มที่ 3.0 วินาที)
         scene_target_duration = st.slider("⏱️ ความยาวแต่ละฉาก (วินาที)", 2.0, 15.0, 3.0, 0.5)
         if faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)": 
             custom_videos = st.file_uploader("📂 อัปโหลดคลิป B-Roll (MP4)", type=["mp4"], accept_multiple_files=True)
             
-    # 🌟 V.57: Placeholder กันกดซ้ำ โหมด 1 ขั้นตอนที่ 1
+    # 🌟 ฟีเจอร์ใหม่: กล่องรับสคริปต์ต้นฉบับ
+    with st.expander("📝 มีสคริปต์ต้นฉบับอยู่แล้ว? (เพิ่มความแม่นยำ AI 100%)"):
+        user_reference_script = st.text_area("วางสคริปต์ที่คุณใช้พากย์เสียงลงที่นี่ AI จะนำไปเทียบคำให้ตรงเป๊ะ:", height=150)
+
     step1_ph_m1 = st.empty()
     if uploaded_file and step1_ph_m1.button("🎧 ขั้นตอนที่ 1: ถอดเสียงและเตรียมสคริปต์", use_container_width=True, type="secondary", key="step1_m1"):
         step1_ph_m1.button("⏳ กำลังประมวลผล AI... (ห้ามกดซ้ำ)", use_container_width=True, type="secondary", disabled=True, key="step1_m1_disabled")
@@ -401,9 +419,9 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
             
             is_proof = st.session_state.get("mode1_ai_proof", True)
             user_rep = st.session_state.get("mode1_replace", "")
-            if is_proof:
-                with st.spinner("🧠 กำลังให้ AI ตรวจทานคำผิด..."):
-                    raw_segments = ai_proofread_segments(client, raw_segments, user_rep)
+            if is_proof or user_reference_script.strip():
+                with st.spinner("🧠 กำลังให้ AI ตรวจทานคำและเทียบสคริปต์..."):
+                    raw_segments = ai_proofread_segments(client, raw_segments, user_rep, user_reference_script)
             
             st.session_state.m1_segments = raw_segments
             st.success("✅ เตรียมสคริปต์เสร็จแล้ว! เชิญตรวจสอบด้านล่าง")
@@ -431,7 +449,9 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
         sub_config = render_subtitle_ui("mode1")
 
         st.markdown("### 4️⃣ เรนเดอร์และพรีวิวงาน")
-        # 🌟 V.57: Placeholder กันกดซ้ำ โหมด 1 ขั้นตอนที่ 2
+        # 🌟 ฟีเจอร์ใหม่: ตัวเลือกเปิด/ปิดฝังซับไตเติล
+        export_mode = st.radio("รูปแบบการส่งออก:", ["🔥 ฝังซับลงในวิดีโอ (Burn-in)", "🎞️ ไม่ฝังซับ (ได้ไฟล์วิดีโอเปล่า + โหลดไฟล์ .SRT แยก)"], horizontal=True, key="m1_export_mode")
+
         render_ph_m1 = st.empty()
         if render_ph_m1.button("🎬 ขั้นตอนที่ 2: สร้างพรีวิววิดีโอ", use_container_width=True, type="primary", key="render_m1"):
             render_ph_m1.button("⏳ กำลังเรนเดอร์วิดีโอ... (ห้ามกดซ้ำ)", use_container_width=True, type="primary", disabled=True, key="render_m1_disabled")
@@ -442,6 +462,11 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                 video_to_process = st.session_state.m1_video_path
                 segments_to_process = st.session_state.m1_segments
                 orig_dur_process = get_video_duration(video_to_process)
+                
+                # เขียนไฟล์ .SRT เก็บไว้ให้โหลด
+                srt_content = generate_srt_content(segments_to_process)
+                with open("subtitles.srt", "w", encoding="utf-8") as srt_file:
+                    srt_file.write(srt_content)
                 
                 if faceless_mode == "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)" and sub_config["auto_cut"] == "เปิด (ตัดช่วงเงียบอัตโนมัติ)":
                     merged_times = []
@@ -519,17 +544,30 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                                 subprocess.run([ACTIVE_FFMPEG, '-y', '-i', f"custom_broll_{i % len(custom_videos)}.mp4", '-ss', '0', '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height}', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path])
                             f.write(f"file '{c_path}'\n")
                     subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 'bg.mp4'])
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', 'audio.mp3', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'])
+                    # 🌟 เลือกว่าจะฝังซับหรือไม่ฝังซับ
+                    if "🔥" in export_mode:
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', 'audio.mp3', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'])
+                    else:
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', 'audio.mp3', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'])
                 else: 
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'])
+                    if "🔥" in export_mode:
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'])
+                    else:
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-c:v', 'copy', '-c:a', 'copy', 'output.mp4'])
 
             st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
             st.markdown("### 🖥️ พรีวิวผลลัพธ์")
-            col_vid1, col_vid2, col_vid3 = st.columns([1, 1, 1])
-            with col_vid2:
+            
+            # แจกปุ่มโหลดไฟล์วิดีโอและไฟล์ SRT
+            col_vid1, col_vid2 = st.columns(2)
+            with col_vid1:
                 st.video("output.mp4")
                 with open("output.mp4", "rb") as f: 
-                    st.download_button("📥 ดาวน์โหลดวิดีโอ", f, "faceless_output.mp4", "video/mp4", type="primary", use_container_width=True)
+                    st.download_button("📥 ดาวน์โหลดวิดีโอ (MP4)", f, "faceless_output.mp4", "video/mp4", type="primary", use_container_width=True)
+            with col_vid2:
+                st.info("💡 นำไฟล์ .SRT นี้ไปอัปโหลดลง Facebook หรือ YouTube เพื่อเปิดใช้งานระบบซับหลายภาษาอัตโนมัติ")
+                with open("subtitles.srt", "rb") as f:
+                    st.download_button("📝 ดาวน์โหลดไฟล์ซับไตเติล (.SRT)", f, "subtitles.srt", "text/plain", use_container_width=True)
 
 # =========================================================
 # 🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join Video & Sub)
@@ -543,14 +581,16 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
     st.markdown("### 1️⃣ อัปโหลดไฟล์วิดีโอและตั้งค่ากฏคลิปสั้น")
     uploaded_videos = st.file_uploader("📂 อัปโหลดวิดีโอที่ต้องการนำมาต่อกัน (MP4)", type=["mp4"], accept_multiple_files=True)
     
-    # 🌟 ฟีเจอร์ใหม่: กฎ 3 วินาที (ตัดคลิปอัตโนมัติ)
     col_t1, col_t2 = st.columns(2)
     with col_t1:
         apply_trim = st.checkbox("✂️ เปิดใช้กฎ 3 วินาที (หั่นคลิปอัตโนมัติก่อนนำมาต่อ)", value=True)
     with col_t2:
         trim_duration = st.slider("⏱️ ความยาวต่อคลิป (วินาที)", 1.0, 10.0, 3.0, 0.5, disabled=not apply_trim)
     
-    # 🌟 V.57: Placeholder กันกดซ้ำ โหมด 2 ขั้นตอนที่ 1
+    # 🌟 ฟีเจอร์ใหม่: กล่องรับสคริปต์ต้นฉบับ
+    with st.expander("📝 มีสคริปต์ต้นฉบับอยู่แล้ว? (เพิ่มความแม่นยำ AI 100%)"):
+        user_reference_script_m2 = st.text_area("วางสคริปต์ที่คุณใช้พากย์เสียงลงที่นี่ AI จะนำไปเทียบคำให้ตรงเป๊ะ:", height=150, key="m2_script")
+
     step1_ph_m2 = st.empty()
     if uploaded_videos and step1_ph_m2.button("🎧 ขั้นตอนที่ 1: รวมคลิปและถอดเสียง", use_container_width=True, type="secondary", key="step1_m2"):
         step1_ph_m2.button("⏳ กำลังประมวลผล AI... (ห้ามกดซ้ำ)", use_container_width=True, type="secondary", disabled=True, key="step1_m2_disabled")
@@ -562,11 +602,9 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                     with open(raw_v_path, "wb") as f_vid: f_vid.write(vid.getbuffer())
                     
                     if apply_trim:
-                        # 🌟 ใช้ FFmpeg ตัดเวลาคลิปตามที่กำหนด และแปลงให้เป็นไฟล์มาตรฐาน (กันภาพเสียตอนต่อกัน)
                         subprocess.run([FFMPEG_CMD, '-y', '-i', raw_v_path, '-t', str(trim_duration), 
                                         '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', v_path], check=True)
                     else:
-                        # ถึงไม่ตัดเวลา ก็ปรับฟอร์แมตให้พร้อมต่อคลิปเสมอ
                         subprocess.run([FFMPEG_CMD, '-y', '-i', raw_v_path, 
                                         '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', v_path], check=True)
 
@@ -583,9 +621,9 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
 
             is_proof = st.session_state.get("mode2_ai_proof", True)
             user_rep = st.session_state.get("mode2_replace", "")
-            if is_proof:
-                with st.spinner("🧠 กำลังให้ AI ตรวจทานคำผิด..."):
-                    raw_segments = ai_proofread_segments(client, raw_segments, user_rep)
+            if is_proof or user_reference_script_m2.strip():
+                with st.spinner("🧠 กำลังให้ AI ตรวจทานคำและเทียบสคริปต์..."):
+                    raw_segments = ai_proofread_segments(client, raw_segments, user_rep, user_reference_script_m2)
 
             st.session_state.m2_segments = raw_segments
             st.success("✅ รวมคลิปและถอดเสียงเสร็จแล้ว! ตรวจสอบด้านล่างได้เลย")
@@ -613,17 +651,24 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
         sub_config = render_subtitle_ui("mode2")
 
         st.markdown("### 4️⃣ เรนเดอร์และพรีวิวงาน")
-        # 🌟 V.57: Placeholder กันกดซ้ำ โหมด 2 ขั้นตอนที่ 2
+        # 🌟 ฟีเจอร์ใหม่: ตัวเลือกเปิด/ปิดฝังซับไตเติล
+        export_mode = st.radio("รูปแบบการส่งออก:", ["🔥 ฝังซับลงในวิดีโอ (Burn-in)", "🎞️ ไม่ฝังซับ (ได้ไฟล์วิดีโอเปล่า + โหลดไฟล์ .SRT แยก)"], horizontal=True, key="m2_export_mode")
+
         render_ph_m2 = st.empty()
         if render_ph_m2.button("🎬 ขั้นตอนที่ 2: สร้างพรีวิววิดีโอ", use_container_width=True, type="primary", key="render_m2"):
             render_ph_m2.button("⏳ กำลังเรนเดอร์วิดีโอ... (ห้ามกดซ้ำ)", use_container_width=True, type="primary", disabled=True, key="render_m2_disabled")
             ensure_ffmpeg_engine()
             ACTIVE_FFMPEG = "./ffmpeg" if os.path.exists("./ffmpeg") else "ffmpeg"
 
-            with st.spinner("กำลังฝังซับไตเติล..."):
+            with st.spinner("กำลังประกอบร่างและเตรียมวิดีโอ..."):
                 video_to_process = "combined.mp4"
                 segments_to_process = st.session_state.m2_segments
                 orig_dur_process = get_video_duration(video_to_process)
+                
+                # เขียนไฟล์ .SRT เก็บไว้ให้โหลด
+                srt_content = generate_srt_content(segments_to_process)
+                with open("subtitles_m2.srt", "w", encoding="utf-8") as srt_file:
+                    srt_file.write(srt_content)
                 
                 if sub_config["auto_cut"] == "เปิด (ตัดช่วงเงียบอัตโนมัติ)":
                     merged_times = []
@@ -680,12 +725,24 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                         ass += f"Dialogue: 0,{format_ass_timestamp(seg['start'])},{format_ass_timestamp(seg['end'])},Default,,0,0,0,,{effect_prefix}{'\\N'.join(lines)}\n"
                 
                 with open("subs_joined.ass", "w", encoding="utf-8") as f: f.write(ass)
-                subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-vf', 'subtitles=subs_joined.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'])
+                
+                # 🌟 เลือกว่าจะฝังซับหรือไม่ฝังซับ
+                if "🔥" in export_mode:
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-vf', 'subtitles=subs_joined.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'])
+                else:
+                    # ปรับเป็นเรนเดอร์ข้ามไปเลยถ้าไม่เอาซับ
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-c:v', 'copy', '-c:a', 'copy', 'output_joined.mp4'])
                 
             st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
             st.markdown("### 🖥️ พรีวิวผลลัพธ์")
-            col_vid1, col_vid2, col_vid3 = st.columns([1, 1, 1])
-            with col_vid2:
+            
+            # แจกปุ่มโหลดไฟล์วิดีโอและไฟล์ SRT
+            col_vid1, col_vid2 = st.columns(2)
+            with col_vid1:
                 st.video("output_joined.mp4")
                 with open("output_joined.mp4", "rb") as f: 
-                    st.download_button("📥 ดาวน์โหลดวิดีโอ", f, "joined_video_with_subs.mp4", "video/mp4", type="primary", use_container_width=True)
+                    st.download_button("📥 ดาวน์โหลดวิดีโอ (MP4)", f, "joined_video_with_subs.mp4", "video/mp4", type="primary", use_container_width=True)
+            with col_vid2:
+                st.info("💡 นำไฟล์ .SRT นี้ไปอัปโหลดลง Facebook หรือ YouTube เพื่อเปิดใช้งานระบบซับหลายภาษาอัตโนมัติ")
+                with open("subtitles_m2.srt", "rb") as f:
+                    st.download_button("📝 ดาวน์โหลดไฟล์ซับไตเติล (.SRT)", f, "subtitles.srt", "text/plain", use_container_width=True)
