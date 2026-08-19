@@ -69,7 +69,6 @@ def format_ass_timestamp(seconds):
     if centis == 100: secs += 1; centis = 0
     return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
 
-# 🌟 เพิ่มฟังก์ชันแปลงเวลาเป็นรูปแบบ SRT สำหรับ Facebook
 def generate_srt_content(segments):
     srt = ""
     for i, seg in enumerate(segments):
@@ -191,7 +190,6 @@ def clean_whisper_segments(segments):
         cleaned.append(seg)
     return cleaned
 
-# 🌟 อัปเกรด AI Proofread ให้รองรับสคริปต์อ้างอิง (Reference Script)
 def ai_proofread_segments(client, segments, user_replacements="", reference_script=""):
     chunk_size = 10
     ref_instruction = ""
@@ -394,7 +392,6 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
         if faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)": 
             custom_videos = st.file_uploader("📂 อัปโหลดคลิป B-Roll (MP4)", type=["mp4"], accept_multiple_files=True)
             
-    # 🌟 ฟีเจอร์ใหม่: กล่องรับสคริปต์ต้นฉบับ
     with st.expander("📝 มีสคริปต์ต้นฉบับอยู่แล้ว? (เพิ่มความแม่นยำ AI 100%)"):
         user_reference_script = st.text_area("วางสคริปต์ที่คุณใช้พากย์เสียงลงที่นี่ AI จะนำไปเทียบคำให้ตรงเป๊ะ:", height=150)
 
@@ -449,7 +446,6 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
         sub_config = render_subtitle_ui("mode1")
 
         st.markdown("### 4️⃣ เรนเดอร์และพรีวิวงาน")
-        # 🌟 ฟีเจอร์ใหม่: ตัวเลือกเปิด/ปิดฝังซับไตเติล
         export_mode = st.radio("รูปแบบการส่งออก:", ["🔥 ฝังซับลงในวิดีโอ (Burn-in)", "🎞️ ไม่ฝังซับ (ได้ไฟล์วิดีโอเปล่า + โหลดไฟล์ .SRT แยก)"], horizontal=True, key="m1_export_mode")
 
         render_ph_m1 = st.empty()
@@ -463,7 +459,6 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                 segments_to_process = st.session_state.m1_segments
                 orig_dur_process = get_video_duration(video_to_process)
                 
-                # เขียนไฟล์ .SRT เก็บไว้ให้โหลด
                 srt_content = generate_srt_content(segments_to_process)
                 with open("subtitles.srt", "w", encoding="utf-8") as srt_file:
                     srt_file.write(srt_content)
@@ -537,28 +532,30 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                     with open("concat.txt", "w") as f:
                         for i, sc in enumerate(scenes):
                             c_path, sc_dur = f"clip_{sc['idx']}.mp4", sc['end'] - sc['start']
+                            # 🌟 แก้ไขจุดที่ 1: บังคับวนลูปคลิปสั้น (-stream_loop -1) และจัดระเบียบเฟรมเรต (fps=30)
                             if faceless_mode == "🤖 Pexels AI (ดึงภาพอัตโนมัติ)":
-                                if fetch_pexels_video(get_action_keyword_from_ai(client, sc["text"]), pexels_key, "temp.mp4"): subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'temp.mp4', '-ss', '0', '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height}', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path])
-                                else: subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'lavfi', '-i', f'color=c=black:s={video_width}x{video_height}:d={sc_dur}', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', c_path])
+                                if fetch_pexels_video(get_action_keyword_from_ai(client, sc["text"]), pexels_key, "temp.mp4"): 
+                                    subprocess.run([ACTIVE_FFMPEG, '-y', '-stream_loop', '-1', '-i', 'temp.mp4', '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path], check=True)
+                                else: 
+                                    subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'lavfi', '-i', f'color=c=black:s={video_width}x{video_height}:d={sc_dur}', '-vf', 'fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', c_path], check=True)
                             else:
-                                subprocess.run([ACTIVE_FFMPEG, '-y', '-i', f"custom_broll_{i % len(custom_videos)}.mp4", '-ss', '0', '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height}', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path])
+                                subprocess.run([ACTIVE_FFMPEG, '-y', '-stream_loop', '-1', '-i', f"custom_broll_{i % len(custom_videos)}.mp4", '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path], check=True)
                             f.write(f"file '{c_path}'\n")
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 'bg.mp4'])
-                    # 🌟 เลือกว่าจะฝังซับหรือไม่ฝังซับ
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 'bg.mp4'], check=True)
+                    
                     if "🔥" in export_mode:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', 'audio.mp3', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'])
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', 'audio.mp3', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
                     else:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', 'audio.mp3', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'])
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', 'audio.mp3', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
                 else: 
                     if "🔥" in export_mode:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'])
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
                     else:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-c:v', 'copy', '-c:a', 'copy', 'output.mp4'])
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-c:v', 'copy', '-c:a', 'copy', 'output.mp4'], check=True)
 
             st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
             st.markdown("### 🖥️ พรีวิวผลลัพธ์")
             
-            # แจกปุ่มโหลดไฟล์วิดีโอและไฟล์ SRT
             col_vid1, col_vid2 = st.columns(2)
             with col_vid1:
                 st.video("output.mp4")
@@ -587,7 +584,6 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
     with col_t2:
         trim_duration = st.slider("⏱️ ความยาวต่อคลิป (วินาที)", 1.0, 10.0, 3.0, 0.5, disabled=not apply_trim)
     
-    # 🌟 ฟีเจอร์ใหม่: กล่องรับสคริปต์ต้นฉบับ
     with st.expander("📝 มีสคริปต์ต้นฉบับอยู่แล้ว? (เพิ่มความแม่นยำ AI 100%)"):
         user_reference_script_m2 = st.text_area("วางสคริปต์ที่คุณใช้พากย์เสียงลงที่นี่ AI จะนำไปเทียบคำให้ตรงเป๊ะ:", height=150, key="m2_script")
 
@@ -601,12 +597,13 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                     v_path = f"part_{i}.mp4"
                     with open(raw_v_path, "wb") as f_vid: f_vid.write(vid.getbuffer())
                     
+                    # 🌟 แก้ไขจุดที่ 2: บังคับเฟรมเรต 30fps ป้องกันภาพกระตุกตอนต่อคลิป
                     if apply_trim:
                         subprocess.run([FFMPEG_CMD, '-y', '-i', raw_v_path, '-t', str(trim_duration), 
-                                        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', v_path], check=True)
+                                        '-vf', 'fps=30,format=yuv420p', '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', v_path], check=True)
                     else:
                         subprocess.run([FFMPEG_CMD, '-y', '-i', raw_v_path, 
-                                        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', v_path], check=True)
+                                        '-vf', 'fps=30,format=yuv420p', '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', v_path], check=True)
 
                     f.write(f"file '{v_path}'\n")
             
@@ -651,7 +648,6 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
         sub_config = render_subtitle_ui("mode2")
 
         st.markdown("### 4️⃣ เรนเดอร์และพรีวิวงาน")
-        # 🌟 ฟีเจอร์ใหม่: ตัวเลือกเปิด/ปิดฝังซับไตเติล
         export_mode = st.radio("รูปแบบการส่งออก:", ["🔥 ฝังซับลงในวิดีโอ (Burn-in)", "🎞️ ไม่ฝังซับ (ได้ไฟล์วิดีโอเปล่า + โหลดไฟล์ .SRT แยก)"], horizontal=True, key="m2_export_mode")
 
         render_ph_m2 = st.empty()
@@ -665,7 +661,6 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                 segments_to_process = st.session_state.m2_segments
                 orig_dur_process = get_video_duration(video_to_process)
                 
-                # เขียนไฟล์ .SRT เก็บไว้ให้โหลด
                 srt_content = generate_srt_content(segments_to_process)
                 with open("subtitles_m2.srt", "w", encoding="utf-8") as srt_file:
                     srt_file.write(srt_content)
@@ -726,17 +721,14 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                 
                 with open("subs_joined.ass", "w", encoding="utf-8") as f: f.write(ass)
                 
-                # 🌟 เลือกว่าจะฝังซับหรือไม่ฝังซับ
                 if "🔥" in export_mode:
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-vf', 'subtitles=subs_joined.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'])
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-vf', 'subtitles=subs_joined.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'], check=True)
                 else:
-                    # ปรับเป็นเรนเดอร์ข้ามไปเลยถ้าไม่เอาซับ
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-c:v', 'copy', '-c:a', 'copy', 'output_joined.mp4'])
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-c:v', 'copy', '-c:a', 'copy', 'output_joined.mp4'], check=True)
                 
             st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
             st.markdown("### 🖥️ พรีวิวผลลัพธ์")
             
-            # แจกปุ่มโหลดไฟล์วิดีโอและไฟล์ SRT
             col_vid1, col_vid2 = st.columns(2)
             with col_vid1:
                 st.video("output_joined.mp4")
