@@ -39,7 +39,6 @@ def load_profiles():
             "bg": "แถบกล่องดำรองหลัง", "anim": "ค่อยๆ ปรากฏ (Fade-in)", "ps": 130, "pd": 150, "fd": 300, 
             "fs": 16, "ot": 0, "mw": 100, "mv": 30, "ll": "ไม่จำกัด (ตามความกว้าง)", "ai_proof": True, "auto_cut": "ปิด (เก็บช่วงเงียบไว้ปกติ)"
         },
-        # 🌟 โปรไฟล์ใหม่: พี่เอกฮีโร่ไอที
         "🦸‍♂️ สไตล์ พี่เอกฮีโร่ไอที": {
             "replace": "แบตเตอรี่กับรถ=แบตเตอรี่ลด, Save=เซฟ, OK=โอเค", "font": "Kanit Bold", "tc": "#FFFF00", "oc": "#000000",
             "bg": "ขอบปกติ", "anim": "ค่อยๆ ปรากฏ (Fade-in)", "ps": 130, "pd": 150, "fd": 200, 
@@ -217,7 +216,6 @@ def handle_load_profile(key_prefix, profiles, defaults):
 # =========================================================
 st.set_page_config(page_title="AI Studio Pro", page_icon="🎬", layout="wide", initial_sidebar_state="expanded")
 
-# แทรก CSS เพื่อแก้อาการสระทับกันในตาราง Data Editor ตอนดูผ่านมือถือ
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
@@ -541,18 +539,36 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
     st.markdown("## 🎞️ สตูดิโอต่อคลิปพร้อมเสียง & ฝังซับ")
     st.markdown("---")
     
-    st.markdown("### 1️⃣ อัปโหลดไฟล์วิดีโอ")
+    st.markdown("### 1️⃣ อัปโหลดไฟล์วิดีโอและตั้งค่ากฏคลิปสั้น")
     uploaded_videos = st.file_uploader("📂 อัปโหลดวิดีโอที่ต้องการนำมาต่อกัน (MP4)", type=["mp4"], accept_multiple_files=True)
+    
+    # 🌟 ฟีเจอร์ใหม่: กฎ 3 วินาที (ตัดคลิปอัตโนมัติ)
+    col_t1, col_t2 = st.columns(2)
+    with col_t1:
+        apply_trim = st.checkbox("✂️ เปิดใช้กฎ 3 วินาที (หั่นคลิปอัตโนมัติก่อนนำมาต่อ)", value=True)
+    with col_t2:
+        trim_duration = st.slider("⏱️ ความยาวต่อคลิป (วินาที)", 1.0, 10.0, 3.0, 0.5, disabled=not apply_trim)
     
     # 🌟 V.57: Placeholder กันกดซ้ำ โหมด 2 ขั้นตอนที่ 1
     step1_ph_m2 = st.empty()
     if uploaded_videos and step1_ph_m2.button("🎧 ขั้นตอนที่ 1: รวมคลิปและถอดเสียง", use_container_width=True, type="secondary", key="step1_m2"):
         step1_ph_m2.button("⏳ กำลังประมวลผล AI... (ห้ามกดซ้ำ)", use_container_width=True, type="secondary", disabled=True, key="step1_m2_disabled")
-        with st.spinner("กำลังต่อคลิปวิดีโอและถอดเสียง..."):
+        with st.spinner("กำลังตัดและต่อคลิปวิดีโอ พร้อมถอดเสียง..."):
             with open("concat_join.txt", "w", encoding="utf-8") as f:
                 for i, vid in enumerate(uploaded_videos):
+                    raw_v_path = f"raw_part_{i}.mp4"
                     v_path = f"part_{i}.mp4"
-                    with open(v_path, "wb") as f_vid: f_vid.write(vid.getbuffer())
+                    with open(raw_v_path, "wb") as f_vid: f_vid.write(vid.getbuffer())
+                    
+                    if apply_trim:
+                        # 🌟 ใช้ FFmpeg ตัดเวลาคลิปตามที่กำหนด และแปลงให้เป็นไฟล์มาตรฐาน (กันภาพเสียตอนต่อกัน)
+                        subprocess.run([FFMPEG_CMD, '-y', '-i', raw_v_path, '-t', str(trim_duration), 
+                                        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', v_path], check=True)
+                    else:
+                        # ถึงไม่ตัดเวลา ก็ปรับฟอร์แมตให้พร้อมต่อคลิปเสมอ
+                        subprocess.run([FFMPEG_CMD, '-y', '-i', raw_v_path, 
+                                        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', v_path], check=True)
+
                     f.write(f"file '{v_path}'\n")
             
             subprocess.run([FFMPEG_CMD, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat_join.txt', '-c', 'copy', 'combined.mp4'], check=True)
@@ -571,7 +587,7 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                     raw_segments = ai_proofread_segments(client, raw_segments, user_rep)
 
             st.session_state.m2_segments = raw_segments
-            st.success("✅ ถอดเสียงเสร็จแล้ว! ตรวจสอบด้านล่างได้เลย")
+            st.success("✅ รวมคลิปและถอดเสียงเสร็จแล้ว! ตรวจสอบด้านล่างได้เลย")
 
     if st.session_state.m2_segments:
         st.markdown("---")
