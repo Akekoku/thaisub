@@ -190,7 +190,6 @@ def clean_whisper_segments(segments):
         cleaned.append(seg)
     return cleaned
 
-# 🌟 แก้ไขจุดที่ 1: อัปเกรดพรอมต์ AI ให้ดุขึ้น บังคับใช้คำจากสคริปต์ต้นฉบับ 100%
 def ai_proofread_segments(client, segments, user_replacements="", reference_script=""):
     chunk_size = 10
     for i in range(0, len(segments), chunk_size):
@@ -198,7 +197,6 @@ def ai_proofread_segments(client, segments, user_replacements="", reference_scri
         data_to_fix = [{"id": str(idx), "text": seg["text"]} for idx, seg in enumerate(chunk)]
         
         if reference_script.strip():
-            # พรอมต์เวอร์ชันบังคับเทียบสคริปต์
             prompt = f"""คุณคือผู้เชี่ยวชาญด้านการแก้ไขซับไตเติลภาษาไทย
 กฎเหล็กขั้นเด็ดขาด:
 1. ด้านล่างนี้คือ "สคริปต์ต้นฉบับที่ถูกต้อง 100%"
@@ -215,7 +213,6 @@ def ai_proofread_segments(client, segments, user_replacements="", reference_scri
 ส่งกลับเฉพาะ JSON รูปแบบนี้เท่านั้น:
 {{"corrected": [{{"id": "0", "text": "ข้อความที่แก้ตามสคริปต์แล้ว"}}]}}"""
         else:
-            # พรอมต์เวอร์ชันแก้คำผิดทั่วไป (กรณีไม่ได้ใส่สคริปต์)
             prompt = f"""คุณคือ AI ผู้ช่วยตรวจสอบซับไตเติล
 หน้าที่ของคุณ: ตรวจสอบและแก้ไขเฉพาะ "คำสะกดผิดไวยากรณ์" เท่านั้น
 กฎเหล็ก: ห้ามเปลี่ยนความหมาย ห้ามลบคำ ตอบกลับเป็น JSON: {{"corrected": [{{"id": "0", "text": "ข้อความ"}}]}}
@@ -401,8 +398,18 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
     st.markdown("---")
     
     st.markdown("### 1️⃣ อัปโหลดและตั้งค่าฉาก")
-    uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์เสียง (MP3/WAV/MP4)", type=["mp4", "mp3", "wav"])
-    faceless_mode = st.radio("พื้นหลังวิดีโอ:", ["ไม่ใช้ (ใช้วิดีโอต้นฉบับ)", "🤖 Pexels AI (ดึงภาพอัตโนมัติ)", "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)"], horizontal=True)
+    uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์เสียงพากย์ (MP3/WAV/MP4)", type=["mp4", "mp3", "wav"])
+    
+    # 🌟 ฟีเจอร์ใหม่: เพิ่มระบบรับไฟล์เสียงเพลงคลอ (BGM)
+    st.markdown("#### 🎵 เพิ่มเสียงเพลงคลอ (BGM)")
+    bgm_file_m1 = st.file_uploader("อัปโหลดไฟล์เพลงคลอ (MP3/WAV) - *ไม่บังคับ*", type=["mp3", "wav"], key="m1_bgm")
+    if bgm_file_m1:
+        bgm_volume_m1 = st.slider("🔊 ระดับเสียงเพลงคลอ (%) *แนะนำ 15-20% เพื่อไม่กลบเสียงพากย์*", 1, 100, 15, key="m1_bgm_vol")
+    else:
+        bgm_volume_m1 = 15
+
+    st.markdown("#### 🖼️ ตั้งค่าวิดีโอพื้นหลัง")
+    faceless_mode = st.radio("แหล่งที่มาวิดีโอ:", ["ไม่ใช้ (ใช้วิดีโอต้นฉบับ)", "🤖 Pexels AI (ดึงภาพอัตโนมัติ)", "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)"], horizontal=True)
     scene_target_duration, custom_videos = 8.0, []
     if faceless_mode != "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)":
         scene_target_duration = st.slider("⏱️ ความยาวแต่ละฉาก (วินาที)", 2.0, 15.0, 3.0, 0.5)
@@ -480,6 +487,18 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                 with open("subtitles.srt", "w", encoding="utf-8") as srt_file:
                     srt_file.write(srt_content)
                 
+                # 🌟 ระบบ Audio Mixing: จัดการเพลงคลอถ้าอัปโหลดมา
+                final_audio_input = "audio.mp3"
+                if bgm_file_m1:
+                    with st.spinner("🎵 กำลังมิกซ์เสียงพากย์กับเพลงคลอ..."):
+                        with open("bgm_raw.mp3", "wb") as f:
+                            f.write(bgm_file_m1.getbuffer())
+                        bgm_vol_float = bgm_volume_m1 / 100.0
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'audio.mp3', '-i', 'bgm_raw.mp3', 
+                                        '-filter_complex', f'[0:a]volume=1.0[a1];[1:a]volume={bgm_vol_float}[a2];[a1][a2]amix=inputs=2:duration=first[aout]', 
+                                        '-map', '[aout]', '-c:a', 'libmp3lame', 'mixed_audio.mp3'], check=True)
+                        final_audio_input = "mixed_audio.mp3"
+
                 if faceless_mode == "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)" and sub_config["auto_cut"] == "เปิด (ตัดช่วงเงียบอัตโนมัติ)":
                     merged_times = []
                     for seg in segments_to_process:
@@ -559,20 +578,21 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                             f.write(f"file '{c_path}'\n")
                     subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 'bg.mp4'], check=True)
                     
+                    # ใช้ final_audio_input ที่มิกซ์เพลงคลอเรียบร้อยแล้ว
                     if "🔥" in export_mode:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', 'audio.mp3', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', final_audio_input, '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
                     else:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', 'audio.mp3', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', final_audio_input, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
                 else: 
+                    # ใช้ final_audio_input ที่มิกซ์เพลงคลอเรียบร้อยแล้ว
                     if "🔥" in export_mode:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
                     else:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-c:v', 'copy', '-c:a', 'copy', 'output.mp4'], check=True)
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
 
             st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
             st.markdown("### 🖥️ พรีวิวผลลัพธ์")
             
-            # 🌟 แก้ไขจุดที่ 2: สร้างคอลัมน์ตีคอกให้วิดีโอเล็กลงอยู่ตรงกลาง
             col_space1, col_vid, col_space2 = st.columns([1.5, 2, 1.5])
             with col_vid:
                 st.video("output.mp4")
@@ -601,6 +621,14 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
         apply_trim = st.checkbox("✂️ เปิดใช้กฎ 3 วินาที (หั่นคลิปอัตโนมัติก่อนนำมาต่อ)", value=True)
     with col_t2:
         trim_duration = st.slider("⏱️ ความยาวต่อคลิป (วินาที)", 1.0, 10.0, 3.0, 0.5, disabled=not apply_trim)
+        
+    # 🌟 ฟีเจอร์ใหม่: เพิ่มระบบรับไฟล์เสียงเพลงคลอ (BGM)
+    st.markdown("#### 🎵 เพิ่มเสียงเพลงคลอ (BGM)")
+    bgm_file_m2 = st.file_uploader("อัปโหลดไฟล์เพลงคลอ (MP3/WAV) - *ไม่บังคับ*", type=["mp3", "wav"], key="m2_bgm")
+    if bgm_file_m2:
+        bgm_volume_m2 = st.slider("🔊 ระดับเสียงเพลงคลอ (%)", 1, 100, 15, key="m2_bgm_vol")
+    else:
+        bgm_volume_m2 = 15
     
     with st.expander("📝 มีสคริปต์ต้นฉบับอยู่แล้ว? (เพิ่มความแม่นยำ AI 100%)"):
         user_reference_script_m2 = st.text_area("วางสคริปต์ที่คุณใช้พากย์เสียงลงที่นี่ AI จะนำไปเทียบคำให้ตรงเป๊ะ:", height=150, key="m2_script")
@@ -681,6 +709,18 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                 srt_content = generate_srt_content(segments_to_process)
                 with open("subtitles_m2.srt", "w", encoding="utf-8") as srt_file:
                     srt_file.write(srt_content)
+                    
+                # 🌟 ระบบ Audio Mixing: จัดการเพลงคลอถ้าอัปโหลดมาในโหมด 2
+                final_audio_input = "audio_joined.mp3"
+                if bgm_file_m2:
+                    with st.spinner("🎵 กำลังมิกซ์เสียงวิดีโอกับเพลงคลอ..."):
+                        with open("bgm_raw_m2.mp3", "wb") as f:
+                            f.write(bgm_file_m2.getbuffer())
+                        bgm_vol_float = bgm_volume_m2 / 100.0
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'audio_joined.mp3', '-i', 'bgm_raw_m2.mp3', 
+                                        '-filter_complex', f'[0:a]volume=1.0[a1];[1:a]volume={bgm_vol_float}[a2];[a1][a2]amix=inputs=2:duration=first[aout]', 
+                                        '-map', '[aout]', '-c:a', 'libmp3lame', 'mixed_audio_m2.mp3'], check=True)
+                        final_audio_input = "mixed_audio_m2.mp3"
                 
                 if sub_config["auto_cut"] == "เปิด (ตัดช่วงเงียบอัตโนมัติ)":
                     merged_times = []
@@ -738,15 +778,15 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                 
                 with open("subs_joined.ass", "w", encoding="utf-8") as f: f.write(ass)
                 
+                # ใช้ final_audio_input ที่มิกซ์เพลงคลอเรียบร้อยแล้วแทนเสียงต้นฉบับ
                 if "🔥" in export_mode:
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-vf', 'subtitles=subs_joined.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'], check=True)
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs_joined.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'], check=True)
                 else:
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-c:v', 'copy', '-c:a', 'copy', 'output_joined.mp4'], check=True)
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'], check=True)
                 
             st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
             st.markdown("### 🖥️ พรีวิวผลลัพธ์")
             
-            # 🌟 แก้ไขจุดที่ 2: สร้างคอลัมน์ตีคอกให้วิดีโอเล็กลงอยู่ตรงกลาง
             col_space1, col_vid, col_space2 = st.columns([1.5, 2, 1.5])
             with col_vid:
                 st.video("output_joined.mp4")
