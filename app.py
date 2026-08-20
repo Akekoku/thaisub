@@ -432,7 +432,6 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
             bgm_volume_m1 = 15
             
     with col_opt2:
-        # 🌟 ฟีเจอร์อัปโหลด AI พรีเซนเตอร์ (Green Screen)
         st.markdown("#### 👤 เพิ่ม AI พรีเซนเตอร์ (Green Screen)")
         gs_file_m1 = st.file_uploader("อัปโหลดไฟล์วิดีโอฉากเขียว (MP4) - *ไม่บังคับ*", type=["mp4"], key="m1_gs")
         col_gs1, col_gs2 = st.columns(2)
@@ -625,7 +624,7 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                 else: 
                     main_vid = video_to_process
 
-                # 🌟 จัดการเรนเดอร์คลิป + ซ้อนภาพ Green Screen
+                # 🌟 แก้ไขจุดที่ 1: ปรับค่า colorkey ให้ดึงสีได้กว้างขึ้นและขอบเนียนขึ้น (0.45:0.15)
                 if "🔥" in export_mode:
                     if gs_file_m1:
                         with open("greenscreen.mp4", "wb") as f:
@@ -636,7 +635,7 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                         pos_y = f"H-h-30"
                         
                         filter_complex_export = (
-                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.3:0.1[ckout];"
+                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.45:0.15[ckout];"
                             f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs.ass:fontsdir=.[vout]"
                         )
                         cmd = [
@@ -660,7 +659,7 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                         pos_x = f"W-w-30" if gs_pos_m1 == "ขวาล่าง" else "30"
                         pos_y = f"H-h-30"
                         filter_complex_export = (
-                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.3:0.1[ckout];"
+                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.45:0.15[ckout];"
                             f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1[vout]"
                         )
                         cmd = [
@@ -874,7 +873,7 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                 
                 main_vid = video_to_process
 
-                # 🌟 จัดการเรนเดอร์คลิป + ซ้อนภาพ Green Screen
+                # 🌟 แก้ไขจุดที่ 1: ปรับค่า colorkey ให้ดึงสีได้กว้างขึ้นและขอบเนียนขึ้น (0.45:0.15)
                 if "🔥" in export_mode:
                     if gs_file_m2:
                         with open("greenscreen_m2.mp4", "wb") as f:
@@ -885,7 +884,7 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                         pos_y = f"H-h-30"
                         
                         filter_complex_export = (
-                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.3:0.1[ckout];"
+                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.45:0.15[ckout];"
                             f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs_joined.ass:fontsdir=.[vout]"
                         )
                         cmd = [
@@ -909,7 +908,7 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                         pos_x = f"W-w-30" if gs_pos_m2 == "ขวาล่าง" else "30"
                         pos_y = f"H-h-30"
                         filter_complex_export = (
-                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.3:0.1[ckout];"
+                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.45:0.15[ckout];"
                             f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1[vout]"
                         )
                         cmd = [
