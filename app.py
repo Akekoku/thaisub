@@ -157,8 +157,7 @@ def get_action_keyword_from_ai(client, thai_text):
         return random.choice(["cinematic landscape", "city life", "modern technology", "people working"])
 
 def fetch_pexels_video(keyword, pexels_key, output_path):
-    if not pexels_key:
-        return False
+    if not pexels_key: return False
     headers = {"Authorization": pexels_key}
     url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=15"
     try:
@@ -170,17 +169,13 @@ def fetch_pexels_video(keyword, pexels_key, output_path):
                 for f in v.get("video_files", []):
                     if f.get("file_type") == "video/mp4" and f.get("width") and f.get("width") >= 720:
                         v_res = requests.get(f.get("link"), timeout=15)
-                        with open(output_path, "wb") as f_out:
-                            f_out.write(v_res.content)
+                        with open(output_path, "wb") as f_out: f_out.write(v_res.content)
                         return True
-    except Exception:
-        pass
+    except Exception: pass
     return False
 
-# 🌟 ฟังก์ชันใหม่: ดึงวิดีโอจาก Pixabay API
 def fetch_pixabay_video(keyword, pixabay_key, output_path):
-    if not pixabay_key:
-        return False
+    if not pixabay_key: return False
     url = f"https://pixabay.com/api/videos/?key={pixabay_key}&q={requests.utils.quote(keyword)}&per_page=15"
     try:
         res = requests.get(url, timeout=10).json()
@@ -192,11 +187,9 @@ def fetch_pixabay_video(keyword, pixabay_key, output_path):
                 chosen = videos_dict.get("large") or videos_dict.get("medium") or videos_dict.get("small")
                 if chosen and chosen.get("url"):
                     v_res = requests.get(chosen["url"], timeout=15)
-                    with open(output_path, "wb") as f_out:
-                        f_out.write(v_res.content)
+                    with open(output_path, "wb") as f_out: f_out.write(v_res.content)
                     return True
-    except Exception:
-        pass
+    except Exception: pass
     return False
 
 def clean_whisper_segments(segments):
@@ -429,14 +422,25 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
     st.markdown("### 1️⃣ อัปโหลดและตั้งค่าฉาก")
     uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์เสียงพากย์ (MP3/WAV/MP4)", type=["mp4", "mp3", "wav"])
     
-    st.markdown("#### 🎵 เพิ่มเสียงเพลงคลอ (BGM)")
-    bgm_file_m1 = st.file_uploader("อัปโหลดไฟล์เพลงคลอ (MP3/WAV) - *ไม่บังคับ*", type=["mp3", "wav"], key="m1_bgm")
-    if bgm_file_m1:
-        bgm_volume_m1 = st.slider("🔊 ระดับเสียงเพลงคลอ (%) *แนะนำ 15-20%*", 1, 100, 15, key="m1_bgm_vol")
-    else:
-        bgm_volume_m1 = 15
+    col_opt1, col_opt2 = st.columns(2)
+    with col_opt1:
+        st.markdown("#### 🎵 เพิ่มเสียงเพลงคลอ (BGM)")
+        bgm_file_m1 = st.file_uploader("อัปโหลดไฟล์เพลงคลอ (MP3/WAV) - *ไม่บังคับ*", type=["mp3", "wav"], key="m1_bgm")
+        if bgm_file_m1:
+            bgm_volume_m1 = st.slider("🔊 ระดับเสียงเพลงคลอ (%) *แนะนำ 15-20%*", 1, 100, 15, key="m1_bgm_vol")
+        else:
+            bgm_volume_m1 = 15
+            
+    with col_opt2:
+        # 🌟 ฟีเจอร์อัปโหลด AI พรีเซนเตอร์ (Green Screen)
+        st.markdown("#### 👤 เพิ่ม AI พรีเซนเตอร์ (Green Screen)")
+        gs_file_m1 = st.file_uploader("อัปโหลดไฟล์วิดีโอฉากเขียว (MP4) - *ไม่บังคับ*", type=["mp4"], key="m1_gs")
+        col_gs1, col_gs2 = st.columns(2)
+        with col_gs1:
+            gs_pos_m1 = st.selectbox("ตำแหน่ง", ["ขวาล่าง", "ซ้ายล่าง"], key="m1_gs_pos")
+        with col_gs2:
+            gs_size_m1 = st.slider("ขนาดตัว (%)", 10, 60, 35, key="m1_gs_size")
 
-    # 🌟 เพิ่มตัวเลือก Pixabay AI
     st.markdown("#### 🖼️ แหล่งที่มาของวิดีโอพื้นหลัง")
     faceless_mode = st.radio(
         "เลือกแหล่งดึงภาพวิดีโอ:", 
@@ -570,10 +574,8 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                 segments_data_for_subs, scenes, current_scene, s_start, s_idx = [], [], "", 0.0, 1
                 for seg in segments_to_process:
                     s, e, t = seg['start'], seg['end'], seg['text']
-                    
                     for old_w, new_w in sub_config["replacements"].items(): t = re.sub(re.escape(old_w), new_w, t, flags=re.IGNORECASE)
                     t = fix_thai_floating_vowels(t)
-                        
                     segments_data_for_subs.append((t, s, e))
                     if current_scene == "": s_start = s
                     current_scene += t + " "
@@ -619,16 +621,61 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                             f.write(f"file '{c_path}'\n")
                             
                     subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 'bg.mp4'], check=True)
-                    
-                    if "🔥" in export_mode:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', final_audio_input, '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
-                    else:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'bg.mp4', '-i', final_audio_input, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
+                    main_vid = 'bg.mp4'
                 else: 
-                    if "🔥" in export_mode:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
+                    main_vid = video_to_process
+
+                # 🌟 จัดการเรนเดอร์คลิป + ซ้อนภาพ Green Screen
+                if "🔥" in export_mode:
+                    if gs_file_m1:
+                        with open("greenscreen.mp4", "wb") as f:
+                            f.write(gs_file_m1.getbuffer())
+                        
+                        gs_scale_w = int(video_width * (gs_size_m1 / 100.0))
+                        pos_x = f"W-w-30" if gs_pos_m1 == "ขวาล่าง" else "30"
+                        pos_y = f"H-h-30"
+                        
+                        filter_complex_export = (
+                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.3:0.1[ckout];"
+                            f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs.ass:fontsdir=.[vout]"
+                        )
+                        cmd = [
+                            ACTIVE_FFMPEG, '-y', 
+                            '-i', main_vid, 
+                            '-i', final_audio_input, 
+                            '-stream_loop', '-1', '-i', 'greenscreen.mp4', 
+                            '-filter_complex', filter_complex_export, 
+                            '-map', '[vout]', '-map', '1:a', 
+                            '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
+                            '-c:a', 'aac', '-b:a', '256k', 'output.mp4'
+                        ]
+                        subprocess.run(cmd, check=True)
                     else:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', main_vid, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
+                else:
+                    if gs_file_m1:
+                        with open("greenscreen.mp4", "wb") as f:
+                            f.write(gs_file_m1.getbuffer())
+                        gs_scale_w = int(video_width * (gs_size_m1 / 100.0))
+                        pos_x = f"W-w-30" if gs_pos_m1 == "ขวาล่าง" else "30"
+                        pos_y = f"H-h-30"
+                        filter_complex_export = (
+                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.3:0.1[ckout];"
+                            f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1[vout]"
+                        )
+                        cmd = [
+                            ACTIVE_FFMPEG, '-y', 
+                            '-i', main_vid, 
+                            '-i', final_audio_input, 
+                            '-stream_loop', '-1', '-i', 'greenscreen.mp4', 
+                            '-filter_complex', filter_complex_export, 
+                            '-map', '[vout]', '-map', '1:a', 
+                            '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
+                            '-c:a', 'aac', '-b:a', '256k', 'output.mp4'
+                        ]
+                        subprocess.run(cmd, check=True)
+                    else:
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', main_vid, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
 
             st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
             st.markdown("### 🖥️ พรีวิวผลลัพธ์")
@@ -662,12 +709,23 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
     with col_t2:
         trim_duration = st.slider("⏱️ ความยาวต่อคลิป (วินาที)", 1.0, 10.0, 3.0, 0.5, disabled=not apply_trim)
         
-    st.markdown("#### 🎵 เพิ่มเสียงเพลงคลอ (BGM)")
-    bgm_file_m2 = st.file_uploader("อัปโหลดไฟล์เพลงคลอ (MP3/WAV) - *ไม่บังคับ*", type=["mp3", "wav"], key="m2_bgm")
-    if bgm_file_m2:
-        bgm_volume_m2 = st.slider("🔊 ระดับเสียงเพลงคลอ (%)", 1, 100, 15, key="m2_bgm_vol")
-    else:
-        bgm_volume_m2 = 15
+    col_opt1, col_opt2 = st.columns(2)
+    with col_opt1:
+        st.markdown("#### 🎵 เพิ่มเสียงเพลงคลอ (BGM)")
+        bgm_file_m2 = st.file_uploader("อัปโหลดไฟล์เพลงคลอ (MP3/WAV) - *ไม่บังคับ*", type=["mp3", "wav"], key="m2_bgm")
+        if bgm_file_m2:
+            bgm_volume_m2 = st.slider("🔊 ระดับเสียงเพลงคลอ (%)", 1, 100, 15, key="m2_bgm_vol")
+        else:
+            bgm_volume_m2 = 15
+            
+    with col_opt2:
+        st.markdown("#### 👤 เพิ่ม AI พรีเซนเตอร์ (Green Screen)")
+        gs_file_m2 = st.file_uploader("อัปโหลดไฟล์วิดีโอฉากเขียว (MP4) - *ไม่บังคับ*", type=["mp4"], key="m2_gs")
+        col_gs1, col_gs2 = st.columns(2)
+        with col_gs1:
+            gs_pos_m2 = st.selectbox("ตำแหน่ง", ["ขวาล่าง", "ซ้ายล่าง"], key="m2_gs_pos")
+        with col_gs2:
+            gs_size_m2 = st.slider("ขนาดตัว (%)", 10, 60, 35, key="m2_gs_size")
     
     with st.expander("📝 มีสคริปต์ต้นฉบับอยู่แล้ว? (เพิ่มความแม่นยำ AI 100%)"):
         user_reference_script_m2 = st.text_area("วางสคริปต์ที่คุณใช้พากย์เสียงลงที่นี่ AI จะนำไปเทียบคำให้ตรงเป๊ะ:", height=150, key="m2_script")
@@ -798,10 +856,8 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                 chunk_size = 2 if "2 บรรทัด" in sub_config["line_limit"] else (1 if "1 บรรทัด" in sub_config["line_limit"] else 0)
                 for seg in segments_to_process:
                     t = seg['text']
-                    
                     for old_w, new_w in sub_config["replacements"].items(): t = re.sub(re.escape(old_w), new_w, t, flags=re.IGNORECASE)
                     t = fix_thai_floating_vowels(t)
-                    
                     formatted_text = split_text_by_pixel_width(t, actual_font_file, actual_pil_font_size, allowed_pixel_width)
                     lines = formatted_text.split('\n')
                     if chunk_size > 0 and len(lines) > chunk_size:
@@ -816,10 +872,59 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                 
                 with open("subs_joined.ass", "w", encoding="utf-8") as f: f.write(ass)
                 
+                main_vid = video_to_process
+
+                # 🌟 จัดการเรนเดอร์คลิป + ซ้อนภาพ Green Screen
                 if "🔥" in export_mode:
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs_joined.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'], check=True)
+                    if gs_file_m2:
+                        with open("greenscreen_m2.mp4", "wb") as f:
+                            f.write(gs_file_m2.getbuffer())
+                        
+                        gs_scale_w = int(v_w * (gs_size_m2 / 100.0))
+                        pos_x = f"W-w-30" if gs_pos_m2 == "ขวาล่าง" else "30"
+                        pos_y = f"H-h-30"
+                        
+                        filter_complex_export = (
+                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.3:0.1[ckout];"
+                            f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs_joined.ass:fontsdir=.[vout]"
+                        )
+                        cmd = [
+                            ACTIVE_FFMPEG, '-y', 
+                            '-i', main_vid, 
+                            '-i', final_audio_input, 
+                            '-stream_loop', '-1', '-i', 'greenscreen_m2.mp4', 
+                            '-filter_complex', filter_complex_export, 
+                            '-map', '[vout]', '-map', '1:a', 
+                            '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
+                            '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'
+                        ]
+                        subprocess.run(cmd, check=True)
+                    else:
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', main_vid, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs_joined.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'], check=True)
                 else:
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'], check=True)
+                    if gs_file_m2:
+                        with open("greenscreen_m2.mp4", "wb") as f:
+                            f.write(gs_file_m2.getbuffer())
+                        gs_scale_w = int(v_w * (gs_size_m2 / 100.0))
+                        pos_x = f"W-w-30" if gs_pos_m2 == "ขวาล่าง" else "30"
+                        pos_y = f"H-h-30"
+                        filter_complex_export = (
+                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.3:0.1[ckout];"
+                            f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1[vout]"
+                        )
+                        cmd = [
+                            ACTIVE_FFMPEG, '-y', 
+                            '-i', main_vid, 
+                            '-i', final_audio_input, 
+                            '-stream_loop', '-1', '-i', 'greenscreen_m2.mp4', 
+                            '-filter_complex', filter_complex_export, 
+                            '-map', '[vout]', '-map', '1:a', 
+                            '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
+                            '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'
+                        ]
+                        subprocess.run(cmd, check=True)
+                    else:
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', main_vid, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'], check=True)
                 
             st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
             st.markdown("### 🖥️ พรีวิวผลลัพธ์")
