@@ -214,7 +214,7 @@ def ai_proofread_segments(client, segments, user_replacements="", reference_scri
     chunk_size = 10
     for i in range(0, len(segments), chunk_size):
         chunk = segments[i:i+chunk_size]
-        data_to_fix = [{"id": str(idx), "text": seg["text"]} for idx, seg in enumerate(chunk)]
+        data_to_fix = [{"id": str(idx), "text": seg["text"]} for idx, enumerate(chunk)]
         
         if reference_script.strip():
             prompt = f"""คุณคือผู้เชี่ยวชาญด้านการแก้ไขซับไตเติลภาษาไทย
@@ -432,13 +432,16 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
             bgm_volume_m1 = 15
             
     with col_opt2:
-        st.markdown("#### 👤 เพิ่ม AI พรีเซนเตอร์ (Green Screen)")
-        gs_file_m1 = st.file_uploader("อัปโหลดไฟล์วิดีโอฉากเขียว (MP4) - *ไม่บังคับ*", type=["mp4"], key="m1_gs")
-        col_gs1, col_gs2 = st.columns(2)
+        # 🌟 อัปเกรด: เพิ่มตัวเลือกว่าไฟล์เป็นฉากเขียวแท้ๆ หรือโปร่งใสมาแล้ว
+        st.markdown("#### 👤 เพิ่ม AI พรีเซนเตอร์")
+        gs_file_m1 = st.file_uploader("อัปโหลดวิดีโอ (MP4/MOV/WEBM) - *ไม่บังคับ*", type=["mp4", "mov", "webm"], key="m1_gs")
+        col_gs1, col_gs2, col_gs3 = st.columns(3)
         with col_gs1:
             gs_pos_m1 = st.selectbox("ตำแหน่ง", ["ขวาล่าง", "ซ้ายล่าง"], key="m1_gs_pos")
         with col_gs2:
             gs_size_m1 = st.slider("ขนาดตัว (%)", 10, 60, 35, key="m1_gs_size")
+        with col_gs3:
+            gs_type_m1 = st.radio("ชนิดพื้นหลัง", ["🟩 ฉากเขียว (ดึงสีออก)", "🔲 โปร่งใสมาแล้ว (Alpha)"], key="m1_gs_type")
 
     st.markdown("#### 🖼️ แหล่งที่มาของวิดีโอพื้นหลัง")
     faceless_mode = st.radio(
@@ -624,25 +627,30 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                 else: 
                     main_vid = video_to_process
 
-                # 🌟 แก้ไขจุดที่ 1: ปรับค่า colorkey ให้ดึงสีได้กว้างขึ้นและขอบเนียนขึ้น (0.45:0.15)
+                # 🌟 ระบบฝังพรีเซนเตอร์ที่รองรับทั้งฉากเขียวและไฟล์โปร่งใส
                 if "🔥" in export_mode:
                     if gs_file_m1:
-                        with open("greenscreen.mp4", "wb") as f:
+                        gs_ext = gs_file_m1.name.split('.')[-1].lower()
+                        gs_path = f"presenter_m1.{gs_ext}"
+                        with open(gs_path, "wb") as f:
                             f.write(gs_file_m1.getbuffer())
                         
                         gs_scale_w = int(video_width * (gs_size_m1 / 100.0))
                         pos_x = f"W-w-30" if gs_pos_m1 == "ขวาล่าง" else "30"
                         pos_y = f"H-h-30"
                         
-                        filter_complex_export = (
-                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.45:0.15[ckout];"
-                            f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs.ass:fontsdir=.[vout]"
-                        )
+                        if "ฉากเขียว" in gs_type_m1:
+                            # ใช้ tolerance=0.25 ที่ปลอดภัยกว่าเดิม
+                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.25:0.1[ckout];[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs.ass:fontsdir=.[vout]"
+                        else:
+                            # ซ้อนทับไปเลย ไม่ต้องพยายามดูดสี
+                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1[ovrl];[0:v][ovrl]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs.ass:fontsdir=.[vout]"
+                        
                         cmd = [
                             ACTIVE_FFMPEG, '-y', 
                             '-i', main_vid, 
                             '-i', final_audio_input, 
-                            '-stream_loop', '-1', '-i', 'greenscreen.mp4', 
+                            '-stream_loop', '-1', '-i', gs_path, 
                             '-filter_complex', filter_complex_export, 
                             '-map', '[vout]', '-map', '1:a', 
                             '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
@@ -653,20 +661,25 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                         subprocess.run([ACTIVE_FFMPEG, '-y', '-i', main_vid, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
                 else:
                     if gs_file_m1:
-                        with open("greenscreen.mp4", "wb") as f:
+                        gs_ext = gs_file_m1.name.split('.')[-1].lower()
+                        gs_path = f"presenter_m1.{gs_ext}"
+                        with open(gs_path, "wb") as f:
                             f.write(gs_file_m1.getbuffer())
+                        
                         gs_scale_w = int(video_width * (gs_size_m1 / 100.0))
                         pos_x = f"W-w-30" if gs_pos_m1 == "ขวาล่าง" else "30"
                         pos_y = f"H-h-30"
-                        filter_complex_export = (
-                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.45:0.15[ckout];"
-                            f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1[vout]"
-                        )
+                        
+                        if "ฉากเขียว" in gs_type_m1:
+                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.25:0.1[ckout];[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1[vout]"
+                        else:
+                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1[ovrl];[0:v][ovrl]overlay={pos_x}:{pos_y}:shortest=1[vout]"
+                        
                         cmd = [
                             ACTIVE_FFMPEG, '-y', 
                             '-i', main_vid, 
                             '-i', final_audio_input, 
-                            '-stream_loop', '-1', '-i', 'greenscreen.mp4', 
+                            '-stream_loop', '-1', '-i', gs_path, 
                             '-filter_complex', filter_complex_export, 
                             '-map', '[vout]', '-map', '1:a', 
                             '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
@@ -718,13 +731,16 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
             bgm_volume_m2 = 15
             
     with col_opt2:
-        st.markdown("#### 👤 เพิ่ม AI พรีเซนเตอร์ (Green Screen)")
-        gs_file_m2 = st.file_uploader("อัปโหลดไฟล์วิดีโอฉากเขียว (MP4) - *ไม่บังคับ*", type=["mp4"], key="m2_gs")
-        col_gs1, col_gs2 = st.columns(2)
+        # 🌟 อัปเกรด: เพิ่มตัวเลือกว่าไฟล์เป็นฉากเขียวแท้ๆ หรือโปร่งใสมาแล้ว
+        st.markdown("#### 👤 เพิ่ม AI พรีเซนเตอร์")
+        gs_file_m2 = st.file_uploader("อัปโหลดวิดีโอ (MP4/MOV/WEBM) - *ไม่บังคับ*", type=["mp4", "mov", "webm"], key="m2_gs")
+        col_gs1, col_gs2, col_gs3 = st.columns(3)
         with col_gs1:
             gs_pos_m2 = st.selectbox("ตำแหน่ง", ["ขวาล่าง", "ซ้ายล่าง"], key="m2_gs_pos")
         with col_gs2:
             gs_size_m2 = st.slider("ขนาดตัว (%)", 10, 60, 35, key="m2_gs_size")
+        with col_gs3:
+            gs_type_m2 = st.radio("ชนิดพื้นหลัง", ["🟩 ฉากเขียว (ดึงสีออก)", "🔲 โปร่งใสมาแล้ว (Alpha)"], key="m2_gs_type")
     
     with st.expander("📝 มีสคริปต์ต้นฉบับอยู่แล้ว? (เพิ่มความแม่นยำ AI 100%)"):
         user_reference_script_m2 = st.text_area("วางสคริปต์ที่คุณใช้พากย์เสียงลงที่นี่ AI จะนำไปเทียบคำให้ตรงเป๊ะ:", height=150, key="m2_script")
@@ -873,25 +889,28 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                 
                 main_vid = video_to_process
 
-                # 🌟 แก้ไขจุดที่ 1: ปรับค่า colorkey ให้ดึงสีได้กว้างขึ้นและขอบเนียนขึ้น (0.45:0.15)
+                # 🌟 ระบบฝังพรีเซนเตอร์ที่รองรับทั้งฉากเขียวและไฟล์โปร่งใส
                 if "🔥" in export_mode:
                     if gs_file_m2:
-                        with open("greenscreen_m2.mp4", "wb") as f:
+                        gs_ext = gs_file_m2.name.split('.')[-1].lower()
+                        gs_path = f"presenter_m2.{gs_ext}"
+                        with open(gs_path, "wb") as f:
                             f.write(gs_file_m2.getbuffer())
                         
                         gs_scale_w = int(v_w * (gs_size_m2 / 100.0))
                         pos_x = f"W-w-30" if gs_pos_m2 == "ขวาล่าง" else "30"
                         pos_y = f"H-h-30"
                         
-                        filter_complex_export = (
-                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.45:0.15[ckout];"
-                            f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs_joined.ass:fontsdir=.[vout]"
-                        )
+                        if "ฉากเขียว" in gs_type_m2:
+                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.25:0.1[ckout];[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs_joined.ass:fontsdir=.[vout]"
+                        else:
+                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1[ovrl];[0:v][ovrl]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs_joined.ass:fontsdir=.[vout]"
+                        
                         cmd = [
                             ACTIVE_FFMPEG, '-y', 
                             '-i', main_vid, 
                             '-i', final_audio_input, 
-                            '-stream_loop', '-1', '-i', 'greenscreen_m2.mp4', 
+                            '-stream_loop', '-1', '-i', gs_path, 
                             '-filter_complex', filter_complex_export, 
                             '-map', '[vout]', '-map', '1:a', 
                             '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
@@ -902,20 +921,25 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                         subprocess.run([ACTIVE_FFMPEG, '-y', '-i', main_vid, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs_joined.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output_joined.mp4'], check=True)
                 else:
                     if gs_file_m2:
-                        with open("greenscreen_m2.mp4", "wb") as f:
+                        gs_ext = gs_file_m2.name.split('.')[-1].lower()
+                        gs_path = f"presenter_m2.{gs_ext}"
+                        with open(gs_path, "wb") as f:
                             f.write(gs_file_m2.getbuffer())
+                        
                         gs_scale_w = int(v_w * (gs_size_m2 / 100.0))
                         pos_x = f"W-w-30" if gs_pos_m2 == "ขวาล่าง" else "30"
                         pos_y = f"H-h-30"
-                        filter_complex_export = (
-                            f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.45:0.15[ckout];"
-                            f"[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1[vout]"
-                        )
+                        
+                        if "ฉากเขียว" in gs_type_m2:
+                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.25:0.1[ckout];[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1[vout]"
+                        else:
+                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1[ovrl];[0:v][ovrl]overlay={pos_x}:{pos_y}:shortest=1[vout]"
+                        
                         cmd = [
                             ACTIVE_FFMPEG, '-y', 
                             '-i', main_vid, 
                             '-i', final_audio_input, 
-                            '-stream_loop', '-1', '-i', 'greenscreen_m2.mp4', 
+                            '-stream_loop', '-1', '-i', gs_path, 
                             '-filter_complex', filter_complex_export, 
                             '-map', '[vout]', '-map', '1:a', 
                             '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
