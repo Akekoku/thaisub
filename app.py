@@ -214,7 +214,6 @@ def ai_proofread_segments(client, segments, user_replacements="", reference_scri
     chunk_size = 10
     for i in range(0, len(segments), chunk_size):
         chunk = segments[i:i+chunk_size]
-        # 🌟 แก้ไข Syntax Error ตรงนี้แล้วครับ
         data_to_fix = [{"id": str(idx), "text": seg["text"]} for idx, seg in enumerate(chunk)]
         
         if reference_script.strip():
@@ -513,192 +512,203 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
         export_mode = st.radio("รูปแบบการส่งออก:", ["🔥 ฝังซับลงในวิดีโอ (Burn-in)", "🎞️ ไม่ฝังซับ (ได้ไฟล์วิดีโอเปล่า + โหลดไฟล์ .SRT แยก)"], horizontal=True, key="m1_export_mode")
 
         render_ph_m1 = st.empty()
+        
+        # 🌟 จุดที่มีการอัปเกรด: เพิ่มดักจับการเซฟไฟล์ B-Roll
         if render_ph_m1.button("🎬 ขั้นตอนที่ 2: สร้างพรีวิววิดีโอ", use_container_width=True, type="primary", key="render_m1"):
-            render_ph_m1.button("⏳ กำลังเรนเดอร์วิดีโอ... (ห้ามกดซ้ำ)", use_container_width=True, type="primary", disabled=True, key="render_m1_disabled")
-            ensure_ffmpeg_engine()
-            ACTIVE_FFMPEG = "./ffmpeg" if os.path.exists("./ffmpeg") else "ffmpeg"
+            if faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)" and not custom_videos:
+                st.warning("⚠️ กรุณาอัปโหลดไฟล์วิดีโอ B-Roll อย่างน้อย 1 คลิปก่อนกดเรนเดอร์ครับ!")
+            else:
+                render_ph_m1.button("⏳ กำลังเรนเดอร์วิดีโอ... (ห้ามกดซ้ำ)", use_container_width=True, type="primary", disabled=True, key="render_m1_disabled")
+                ensure_ffmpeg_engine()
+                ACTIVE_FFMPEG = "./ffmpeg" if os.path.exists("./ffmpeg") else "ffmpeg"
+                
+                # สั่งให้บันทึกไฟล์ B-Roll ลงเครื่องก่อนให้ FFmpeg เอาไปใช้งาน
+                if faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)":
+                    for idx, c_vid in enumerate(custom_videos):
+                        with open(f"custom_broll_{idx}.mp4", "wb") as f_out:
+                            f_out.write(c_vid.getbuffer())
 
-            with st.spinner("กำลังประกอบร่างวิดีโอ..."):
-                video_to_process = st.session_state.m1_video_path
-                segments_to_process = st.session_state.m1_segments
-                orig_dur_process = get_video_duration(video_to_process)
-                
-                srt_content = generate_srt_content(segments_to_process)
-                with open("subtitles.srt", "w", encoding="utf-8") as srt_file:
-                    srt_file.write(srt_content)
-                
-                final_audio_input = "audio.mp3"
-                if bgm_file_m1:
-                    with st.spinner("🎵 กำลังมิกซ์เสียงพากย์กับเพลงคลอ..."):
-                        with open("bgm_raw.mp3", "wb") as f:
-                            f.write(bgm_file_m1.getbuffer())
-                        bgm_vol_float = bgm_volume_m1 / 100.0
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'audio.mp3', '-i', 'bgm_raw.mp3', 
-                                        '-filter_complex', f'[0:a]volume=1.0[a1];[1:a]volume={bgm_vol_float}[a2];[a1][a2]amix=inputs=2:duration=first[aout]', 
-                                        '-map', '[aout]', '-c:a', 'libmp3lame', 'mixed_audio.mp3'], check=True)
-                        final_audio_input = "mixed_audio.mp3"
+                with st.spinner("กำลังประกอบร่างวิดีโอ..."):
+                    video_to_process = st.session_state.m1_video_path
+                    segments_to_process = st.session_state.m1_segments
+                    orig_dur_process = get_video_duration(video_to_process)
+                    
+                    srt_content = generate_srt_content(segments_to_process)
+                    with open("subtitles.srt", "w", encoding="utf-8") as srt_file:
+                        srt_file.write(srt_content)
+                    
+                    final_audio_input = "audio.mp3"
+                    if bgm_file_m1:
+                        with st.spinner("🎵 กำลังมิกซ์เสียงพากย์กับเพลงคลอ..."):
+                            with open("bgm_raw.mp3", "wb") as f:
+                                f.write(bgm_file_m1.getbuffer())
+                            bgm_vol_float = bgm_volume_m1 / 100.0
+                            subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'audio.mp3', '-i', 'bgm_raw.mp3', 
+                                            '-filter_complex', f'[0:a]volume=1.0[a1];[1:a]volume={bgm_vol_float}[a2];[a1][a2]amix=inputs=2:duration=first[aout]', 
+                                            '-map', '[aout]', '-c:a', 'libmp3lame', 'mixed_audio.mp3'], check=True)
+                            final_audio_input = "mixed_audio.mp3"
 
-                if faceless_mode == "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)" and sub_config["auto_cut"] == "เปิด (ตัดช่วงเงียบอัตโนมัติ)":
-                    merged_times = []
-                    for seg in segments_to_process:
-                        s_cut, e_cut = max(0.0, seg['start'] - 0.15), min(orig_dur_process, seg['end'] + 0.15) if orig_dur_process > 0 else seg['end'] + 0.15
-                        if not merged_times: merged_times.append({'start': s_cut, 'end': e_cut, 'segments': [seg]})
-                        else:
-                            if s_cut <= merged_times[-1]['end']: 
-                                merged_times[-1]['end'] = max(merged_times[-1]['end'], e_cut)
-                                merged_times[-1]['segments'].append(seg)
-                            else: merged_times.append({'start': s_cut, 'end': e_cut, 'segments': [seg]})
-                    if merged_times and orig_dur_process > 0 and orig_dur_process - merged_times[-1]['end'] <= 4.0: merged_times[-1]['end'] = orig_dur_process
-                    if merged_times:
-                        filter_complex, concat_inputs = "", ""
-                        for i, b in enumerate(merged_times):
-                            filter_complex += f"[0:v]trim=start={b['start']}:end={b['end']},setpts=PTS-STARTPTS[v{i}];[0:a]atrim=start={b['start']}:end={b['end']},asetpts=PTS-STARTPTS[a{i}];"
-                            concat_inputs += f"[v{i}][a{i}]"
-                        filter_complex += f"{concat_inputs}concat=n={len(merged_times)}:v=1:a=1[outv][outa]"
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-filter_complex', filter_complex, '-map', '[outv]', '-map', '[outa]', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'jumpcut.mp4'], check=True)
-                        video_to_process = "jumpcut.mp4"
-                        segments_to_process, current_new_time = [], 0.0
-                        for block in merged_times:
-                            for seg in block['segments']: segments_to_process.append({'start': current_new_time + max(0.0, seg['start'] - block['start']), 'end': current_new_time + min(block['end'] - block['start'], seg['end'] - block['start']), 'text': seg['text']})
-                            current_new_time += block['end'] - block['start']
-
-                video_width, video_height = (720, 1280) if faceless_mode != "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)" else get_video_dimensions(video_to_process)
-                actual_font_file = FONT_MAP[sub_config["font"]]
-                actual_pil_font_size, allowed_pixel_width = int((sub_config["size"] / 288) * video_height * 0.75), video_width * (sub_config["max_w"] / 100)
-                ass_font_size, ass_outline, ass_margin_v = int(sub_config["size"] * (video_height / 288.0)), int(sub_config["outline"] * (video_height / 288.0)), int(sub_config["margin_v"] * (video_height / 288.0))
-                
-                effect_prefix = ""
-                if sub_config["anim"] == "เด้งพอง (Pop-up)": effect_prefix = f"{{\\fscx{sub_config['pop_scale']}\\fscy{sub_config['pop_scale']}\\t(0,{sub_config['pop_dur']},\\fscx100\\fscy100)}}"
-                elif sub_config["anim"] == "ค่อยๆ ปรากฏ (Fade-in)": effect_prefix = f"{{\\fad({sub_config['fade_dur']},0)}}"
-                
-                ass_content = f"""[Script Info]\nScriptType: v4.00+\nPlayResX: {video_width}\nPlayResY: {video_height}\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,{sub_config["font"]},{ass_font_size},{hex_to_ass_color(sub_config["t_color"])},&H0000FFFF,{hex_to_ass_color(sub_config["o_color"])},&H80000000,0,0,0,0,100,100,0,0,{3 if sub_config["bg_style"] == "แถบกล่องดำรองหลัง" else 1},{ass_outline},0,2,10,10,{ass_margin_v},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"""
-                
-                segments_data_for_subs, scenes, current_scene, s_start, s_idx = [], [], "", 0.0, 1
-                for seg in segments_to_process:
-                    s, e, t = seg['start'], seg['end'], seg['text']
-                    for old_w, new_w in sub_config["replacements"].items(): t = re.sub(re.escape(old_w), new_w, t, flags=re.IGNORECASE)
-                    t = fix_thai_floating_vowels(t)
-                    segments_data_for_subs.append((t, s, e))
-                    if current_scene == "": s_start = s
-                    current_scene += t + " "
-                    if (e - s_start) >= scene_target_duration: scenes.append({"idx": s_idx, "start": s_start, "end": e, "text": current_scene}); s_idx += 1; current_scene = ""
-                if current_scene: scenes.append({"idx": s_idx, "start": s_start, "end": segments_to_process[-1]['end'], "text": current_scene})
-                
-                chunk_size = 2 if "2 บรรทัด" in sub_config["line_limit"] else (1 if "1 บรรทัด" in sub_config["line_limit"] else 0)
-                
-                for text_sub, start_time, end_time in segments_data_for_subs:
-                    formatted_text = split_text_by_pixel_width(text_sub, actual_font_file, actual_pil_font_size, allowed_pixel_width)
-                    lines = formatted_text.split('\n')
-                    if chunk_size > 0 and len(lines) > chunk_size:
-                        chunks = [ "\n".join(lines[j:j+chunk_size]) for j in range(0, len(lines), chunk_size) ]
-                        t_start, total_chars = start_time, max(1, sum(len(c.replace('\n','')) for c in chunks))
-                        for chunk in chunks:
-                            t_end = t_start + ((end_time - start_time) * (len(chunk.replace('\n','')) / total_chars))
-                            ass_content += f"Dialogue: 0,{format_ass_timestamp(t_start)},{format_ass_timestamp(t_end)},Default,,0,0,0,,{effect_prefix}{chunk.replace('\n', '\\N')}\n"
-                            t_start = t_end
-                    else: 
-                        ass_content += f"Dialogue: 0,{format_ass_timestamp(start_time)},{format_ass_timestamp(end_time)},Default,,0,0,0,,{effect_prefix}{'\\N'.join(lines)}\n"
-            
-                with open("subs.ass", "w", encoding="utf-8") as f: f.write(ass_content)
-
-                if faceless_mode != "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)":
-                    with open("concat.txt", "w") as f:
-                        for i, sc in enumerate(scenes):
-                            c_path, sc_dur = f"clip_{sc['idx']}.mp4", sc['end'] - sc['start']
-                            keyword = get_action_keyword_from_ai(client, sc["text"])
-                            
-                            fetched = False
-                            if "Pexels" in faceless_mode:
-                                fetched = fetch_pexels_video(keyword, pexels_key, "temp.mp4")
-                            elif "Pixabay" in faceless_mode:
-                                fetched = fetch_pixabay_video(keyword, pixabay_key, "temp.mp4")
-
-                            if fetched:
-                                subprocess.run([ACTIVE_FFMPEG, '-y', '-stream_loop', '-1', '-i', 'temp.mp4', '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path], check=True)
-                            elif faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)":
-                                subprocess.run([ACTIVE_FFMPEG, '-y', '-stream_loop', '-1', '-i', f"custom_broll_{i % len(custom_videos)}.mp4", '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path], check=True)
+                    if faceless_mode == "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)" and sub_config["auto_cut"] == "เปิด (ตัดช่วงเงียบอัตโนมัติ)":
+                        merged_times = []
+                        for seg in segments_to_process:
+                            s_cut, e_cut = max(0.0, seg['start'] - 0.15), min(orig_dur_process, seg['end'] + 0.15) if orig_dur_process > 0 else seg['end'] + 0.15
+                            if not merged_times: merged_times.append({'start': s_cut, 'end': e_cut, 'segments': [seg]})
                             else:
-                                subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'lavfi', '-i', f'color=c=black:s={video_width}x{video_height}:d={sc_dur}', '-vf', 'fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', c_path], check=True)
+                                if s_cut <= merged_times[-1]['end']: 
+                                    merged_times[-1]['end'] = max(merged_times[-1]['end'], e_cut)
+                                    merged_times[-1]['segments'].append(seg)
+                                else: merged_times.append({'start': s_cut, 'end': e_cut, 'segments': [seg]})
+                        if merged_times and orig_dur_process > 0 and orig_dur_process - merged_times[-1]['end'] <= 4.0: merged_times[-1]['end'] = orig_dur_process
+                        if merged_times:
+                            filter_complex, concat_inputs = "", ""
+                            for i, b in enumerate(merged_times):
+                                filter_complex += f"[0:v]trim=start={b['start']}:end={b['end']},setpts=PTS-STARTPTS[v{i}];[0:a]atrim=start={b['start']}:end={b['end']},asetpts=PTS-STARTPTS[a{i}];"
+                                concat_inputs += f"[v{i}][a{i}]"
+                            filter_complex += f"{concat_inputs}concat=n={len(merged_times)}:v=1:a=1[outv][outa]"
+                            subprocess.run([ACTIVE_FFMPEG, '-y', '-i', video_to_process, '-filter_complex', filter_complex, '-map', '[outv]', '-map', '[outa]', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'jumpcut.mp4'], check=True)
+                            video_to_process = "jumpcut.mp4"
+                            segments_to_process, current_new_time = [], 0.0
+                            for block in merged_times:
+                                for seg in block['segments']: segments_to_process.append({'start': current_new_time + max(0.0, seg['start'] - block['start']), 'end': current_new_time + min(block['end'] - block['start'], seg['end'] - block['start']), 'text': seg['text']})
+                                current_new_time += block['end'] - block['start']
+
+                    video_width, video_height = (720, 1280) if faceless_mode != "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)" else get_video_dimensions(video_to_process)
+                    actual_font_file = FONT_MAP[sub_config["font"]]
+                    actual_pil_font_size, allowed_pixel_width = int((sub_config["size"] / 288) * video_height * 0.75), video_width * (sub_config["max_w"] / 100)
+                    ass_font_size, ass_outline, ass_margin_v = int(sub_config["size"] * (video_height / 288.0)), int(sub_config["outline"] * (video_height / 288.0)), int(sub_config["margin_v"] * (video_height / 288.0))
+                    
+                    effect_prefix = ""
+                    if sub_config["anim"] == "เด้งพอง (Pop-up)": effect_prefix = f"{{\\fscx{sub_config['pop_scale']}\\fscy{sub_config['pop_scale']}\\t(0,{sub_config['pop_dur']},\\fscx100\\fscy100)}}"
+                    elif sub_config["anim"] == "ค่อยๆ ปรากฏ (Fade-in)": effect_prefix = f"{{\\fad({sub_config['fade_dur']},0)}}"
+                    
+                    ass_content = f"""[Script Info]\nScriptType: v4.00+\nPlayResX: {video_width}\nPlayResY: {video_height}\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,{sub_config["font"]},{ass_font_size},{hex_to_ass_color(sub_config["t_color"])},&H0000FFFF,{hex_to_ass_color(sub_config["o_color"])},&H80000000,0,0,0,0,100,100,0,0,{3 if sub_config["bg_style"] == "แถบกล่องดำรองหลัง" else 1},{ass_outline},0,2,10,10,{ass_margin_v},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"""
+                    
+                    segments_data_for_subs, scenes, current_scene, s_start, s_idx = [], [], "", 0.0, 1
+                    for seg in segments_to_process:
+                        s, e, t = seg['start'], seg['end'], seg['text']
+                        for old_w, new_w in sub_config["replacements"].items(): t = re.sub(re.escape(old_w), new_w, t, flags=re.IGNORECASE)
+                        t = fix_thai_floating_vowels(t)
+                        segments_data_for_subs.append((t, s, e))
+                        if current_scene == "": s_start = s
+                        current_scene += t + " "
+                        if (e - s_start) >= scene_target_duration: scenes.append({"idx": s_idx, "start": s_start, "end": e, "text": current_scene}); s_idx += 1; current_scene = ""
+                    if current_scene: scenes.append({"idx": s_idx, "start": s_start, "end": segments_to_process[-1]['end'], "text": current_scene})
+                    
+                    chunk_size = 2 if "2 บรรทัด" in sub_config["line_limit"] else (1 if "1 บรรทัด" in sub_config["line_limit"] else 0)
+                    
+                    for text_sub, start_time, end_time in segments_data_for_subs:
+                        formatted_text = split_text_by_pixel_width(text_sub, actual_font_file, actual_pil_font_size, allowed_pixel_width)
+                        lines = formatted_text.split('\n')
+                        if chunk_size > 0 and len(lines) > chunk_size:
+                            chunks = [ "\n".join(lines[j:j+chunk_size]) for j in range(0, len(lines), chunk_size) ]
+                            t_start, total_chars = start_time, max(1, sum(len(c.replace('\n','')) for c in chunks))
+                            for chunk in chunks:
+                                t_end = t_start + ((end_time - start_time) * (len(chunk.replace('\n','')) / total_chars))
+                                ass_content += f"Dialogue: 0,{format_ass_timestamp(t_start)},{format_ass_timestamp(t_end)},Default,,0,0,0,,{effect_prefix}{chunk.replace('\n', '\\N')}\n"
+                                t_start = t_end
+                        else: 
+                            ass_content += f"Dialogue: 0,{format_ass_timestamp(start_time)},{format_ass_timestamp(end_time)},Default,,0,0,0,,{effect_prefix}{'\\N'.join(lines)}\n"
+                
+                    with open("subs.ass", "w", encoding="utf-8") as f: f.write(ass_content)
+
+                    if faceless_mode != "ไม่ใช้ (ใช้วิดีโอต้นฉบับ)":
+                        with open("concat.txt", "w") as f:
+                            for i, sc in enumerate(scenes):
+                                c_path, sc_dur = f"clip_{sc['idx']}.mp4", sc['end'] - sc['start']
+                                keyword = get_action_keyword_from_ai(client, sc["text"])
                                 
-                            f.write(f"file '{c_path}'\n")
+                                fetched = False
+                                if "Pexels" in faceless_mode:
+                                    fetched = fetch_pexels_video(keyword, pexels_key, "temp.mp4")
+                                elif "Pixabay" in faceless_mode:
+                                    fetched = fetch_pixabay_video(keyword, pixabay_key, "temp.mp4")
+
+                                if fetched:
+                                    subprocess.run([ACTIVE_FFMPEG, '-y', '-stream_loop', '-1', '-i', 'temp.mp4', '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path], check=True)
+                                elif faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)":
+                                    subprocess.run([ACTIVE_FFMPEG, '-y', '-stream_loop', '-1', '-i', f"custom_broll_{i % len(custom_videos)}.mp4", '-t', str(sc_dur), '-vf', f'scale={video_width}:{video_height}:force_original_aspect_ratio=increase,crop={video_width}:{video_height},fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-an', c_path], check=True)
+                                else:
+                                    subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'lavfi', '-i', f'color=c=black:s={video_width}x{video_height}:d={sc_dur}', '-vf', 'fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', c_path], check=True)
+                                    
+                                f.write(f"file '{c_path}'\n")
+                                
+                        subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 'bg.mp4'], check=True)
+                        main_vid = 'bg.mp4'
+                    else: 
+                        main_vid = video_to_process
+
+                    if "🔥" in export_mode:
+                        if gs_file_m1:
+                            gs_ext = gs_file_m1.name.split('.')[-1].lower()
+                            gs_path = f"presenter_m1.{gs_ext}"
+                            with open(gs_path, "wb") as f:
+                                f.write(gs_file_m1.getbuffer())
                             
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 'bg.mp4'], check=True)
-                    main_vid = 'bg.mp4'
-                else: 
-                    main_vid = video_to_process
-
-                if "🔥" in export_mode:
-                    if gs_file_m1:
-                        gs_ext = gs_file_m1.name.split('.')[-1].lower()
-                        gs_path = f"presenter_m1.{gs_ext}"
-                        with open(gs_path, "wb") as f:
-                            f.write(gs_file_m1.getbuffer())
-                        
-                        gs_scale_w = int(video_width * (gs_size_m1 / 100.0))
-                        pos_x = f"W-w-30" if gs_pos_m1 == "ขวาล่าง" else "30"
-                        pos_y = f"H-h-30"
-                        
-                        if "ฉากเขียว" in gs_type_m1:
-                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.25:0.1[ckout];[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs.ass:fontsdir=.[vout]"
+                            gs_scale_w = int(video_width * (gs_size_m1 / 100.0))
+                            pos_x = f"W-w-30" if gs_pos_m1 == "ขวาล่าง" else "30"
+                            pos_y = f"H-h-30"
+                            
+                            if "ฉากเขียว" in gs_type_m1:
+                                filter_complex_export = f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.25:0.1[ckout];[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs.ass:fontsdir=.[vout]"
+                            else:
+                                filter_complex_export = f"[2:v]scale={gs_scale_w}:-1[ovrl];[0:v][ovrl]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs.ass:fontsdir=.[vout]"
+                            
+                            cmd = [
+                                ACTIVE_FFMPEG, '-y', 
+                                '-i', main_vid, 
+                                '-i', final_audio_input, 
+                                '-stream_loop', '-1', '-i', gs_path, 
+                                '-filter_complex', filter_complex_export, 
+                                '-map', '[vout]', '-map', '1:a', 
+                                '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
+                                '-c:a', 'aac', '-b:a', '256k', 'output.mp4'
+                            ]
+                            subprocess.run(cmd, check=True)
                         else:
-                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1[ovrl];[0:v][ovrl]overlay={pos_x}:{pos_y}:shortest=1,subtitles=subs.ass:fontsdir=.[vout]"
-                        
-                        cmd = [
-                            ACTIVE_FFMPEG, '-y', 
-                            '-i', main_vid, 
-                            '-i', final_audio_input, 
-                            '-stream_loop', '-1', '-i', gs_path, 
-                            '-filter_complex', filter_complex_export, 
-                            '-map', '[vout]', '-map', '1:a', 
-                            '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
-                            '-c:a', 'aac', '-b:a', '256k', 'output.mp4'
-                        ]
-                        subprocess.run(cmd, check=True)
+                            subprocess.run([ACTIVE_FFMPEG, '-y', '-i', main_vid, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
                     else:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', main_vid, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-vf', 'subtitles=subs.ass:fontsdir=.', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
-                else:
-                    if gs_file_m1:
-                        gs_ext = gs_file_m1.name.split('.')[-1].lower()
-                        gs_path = f"presenter_m1.{gs_ext}"
-                        with open(gs_path, "wb") as f:
-                            f.write(gs_file_m1.getbuffer())
-                        
-                        gs_scale_w = int(video_width * (gs_size_m1 / 100.0))
-                        pos_x = f"W-w-30" if gs_pos_m1 == "ขวาล่าง" else "30"
-                        pos_y = f"H-h-30"
-                        
-                        if "ฉากเขียว" in gs_type_m1:
-                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.25:0.1[ckout];[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1[vout]"
+                        if gs_file_m1:
+                            gs_ext = gs_file_m1.name.split('.')[-1].lower()
+                            gs_path = f"presenter_m1.{gs_ext}"
+                            with open(gs_path, "wb") as f:
+                                f.write(gs_file_m1.getbuffer())
+                            
+                            gs_scale_w = int(video_width * (gs_size_m1 / 100.0))
+                            pos_x = f"W-w-30" if gs_pos_m1 == "ขวาล่าง" else "30"
+                            pos_y = f"H-h-30"
+                            
+                            if "ฉากเขียว" in gs_type_m1:
+                                filter_complex_export = f"[2:v]scale={gs_scale_w}:-1,colorkey=0x00FF00:0.25:0.1[ckout];[0:v][ckout]overlay={pos_x}:{pos_y}:shortest=1[vout]"
+                            else:
+                                filter_complex_export = f"[2:v]scale={gs_scale_w}:-1[ovrl];[0:v][ovrl]overlay={pos_x}:{pos_y}:shortest=1[vout]"
+                            
+                            cmd = [
+                                ACTIVE_FFMPEG, '-y', 
+                                '-i', main_vid, 
+                                '-i', final_audio_input, 
+                                '-stream_loop', '-1', '-i', gs_path, 
+                                '-filter_complex', filter_complex_export, 
+                                '-map', '[vout]', '-map', '1:a', 
+                                '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
+                                '-c:a', 'aac', '-b:a', '256k', 'output.mp4'
+                            ]
+                            subprocess.run(cmd, check=True)
                         else:
-                            filter_complex_export = f"[2:v]scale={gs_scale_w}:-1[ovrl];[0:v][ovrl]overlay={pos_x}:{pos_y}:shortest=1[vout]"
-                        
-                        cmd = [
-                            ACTIVE_FFMPEG, '-y', 
-                            '-i', main_vid, 
-                            '-i', final_audio_input, 
-                            '-stream_loop', '-1', '-i', gs_path, 
-                            '-filter_complex', filter_complex_export, 
-                            '-map', '[vout]', '-map', '1:a', 
-                            '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
-                            '-c:a', 'aac', '-b:a', '256k', 'output.mp4'
-                        ]
-                        subprocess.run(cmd, check=True)
-                    else:
-                        subprocess.run([ACTIVE_FFMPEG, '-y', '-i', main_vid, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
+                            subprocess.run([ACTIVE_FFMPEG, '-y', '-i', main_vid, '-i', final_audio_input, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', 'output.mp4'], check=True)
 
-            st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
-            st.markdown("### 🖥️ พรีวิวผลลัพธ์")
-            
-            col_space1, col_vid, col_space2 = st.columns([1.5, 2, 1.5])
-            with col_vid:
-                st.video("output.mp4")
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    with open("output.mp4", "rb") as f: 
-                        st.download_button("📥 โหลดวิดีโอ (MP4)", f, "faceless_output.mp4", "video/mp4", type="primary", use_container_width=True)
-                with col_btn2:
-                    with open("subtitles.srt", "rb") as f:
-                        st.download_button("📝 โหลดไฟล์ (.SRT)", f, "subtitles.srt", "text/plain", use_container_width=True)
+                st.success("🎉 เรนเดอร์เสร็จสมบูรณ์!")
+                st.markdown("### 🖥️ พรีวิวผลลัพธ์")
+                
+                col_space1, col_vid, col_space2 = st.columns([1.5, 2, 1.5])
+                with col_vid:
+                    st.video("output.mp4")
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        with open("output.mp4", "rb") as f: 
+                            st.download_button("📥 โหลดวิดีโอ (MP4)", f, "faceless_output.mp4", "video/mp4", type="primary", use_container_width=True)
+                    with col_btn2:
+                        with open("subtitles.srt", "rb") as f:
+                            st.download_button("📝 โหลดไฟล์ (.SRT)", f, "subtitles.srt", "text/plain", use_container_width=True)
 
 # =========================================================
 # 🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join Video & Sub)
