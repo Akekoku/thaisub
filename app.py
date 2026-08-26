@@ -513,7 +513,6 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
 
         render_ph_m1 = st.empty()
         
-        # 🌟 จุดที่มีการอัปเกรด: เพิ่มดักจับการเซฟไฟล์ B-Roll
         if render_ph_m1.button("🎬 ขั้นตอนที่ 2: สร้างพรีวิววิดีโอ", use_container_width=True, type="primary", key="render_m1"):
             if faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)" and not custom_videos:
                 st.warning("⚠️ กรุณาอัปโหลดไฟล์วิดีโอ B-Roll อย่างน้อย 1 คลิปก่อนกดเรนเดอร์ครับ!")
@@ -522,7 +521,6 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                 ensure_ffmpeg_engine()
                 ACTIVE_FFMPEG = "./ffmpeg" if os.path.exists("./ffmpeg") else "ffmpeg"
                 
-                # สั่งให้บันทึกไฟล์ B-Roll ลงเครื่องก่อนให้ FFmpeg เอาไปใช้งาน
                 if faceless_mode == "📂 Custom B-Roll (อัปโหลดมาเรียงเอง)":
                     for idx, c_vid in enumerate(custom_videos):
                         with open(f"custom_broll_{idx}.mp4", "wb") as f_out:
@@ -583,16 +581,34 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                     
                     ass_content = f"""[Script Info]\nScriptType: v4.00+\nPlayResX: {video_width}\nPlayResY: {video_height}\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,{sub_config["font"]},{ass_font_size},{hex_to_ass_color(sub_config["t_color"])},&H0000FFFF,{hex_to_ass_color(sub_config["o_color"])},&H80000000,0,0,0,0,100,100,0,0,{3 if sub_config["bg_style"] == "แถบกล่องดำรองหลัง" else 1},{ass_outline},0,2,10,10,{ass_margin_v},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"""
                     
-                    segments_data_for_subs, scenes, current_scene, s_start, s_idx = [], [], "", 0.0, 1
+                    # 🌟 อัปเกรดจุดที่ 1: เตรียมเนื้อหาซับไตเติล
+                    segments_data_for_subs = []
                     for seg in segments_to_process:
                         s, e, t = seg['start'], seg['end'], seg['text']
                         for old_w, new_w in sub_config["replacements"].items(): t = re.sub(re.escape(old_w), new_w, t, flags=re.IGNORECASE)
                         t = fix_thai_floating_vowels(t)
                         segments_data_for_subs.append((t, s, e))
-                        if current_scene == "": s_start = s
-                        current_scene += t + " "
-                        if (e - s_start) >= scene_target_duration: scenes.append({"idx": s_idx, "start": s_start, "end": e, "text": current_scene}); s_idx += 1; current_scene = ""
-                    if current_scene: scenes.append({"idx": s_idx, "start": s_start, "end": segments_to_process[-1]['end'], "text": current_scene})
+                        
+                    # 🌟 อัปเกรดจุดที่ 2: สับฉากด้วยเวลาล้วนๆ ไม่ง้อประโยค AI
+                    scenes = []
+                    current_time = 0.0
+                    s_idx = 1
+                    total_time = segments_to_process[-1]['end'] if segments_to_process else orig_dur_process
+                    if total_time <= 0: total_time = 1.0 # กันบั๊กเสียงสั้นเกิน
+
+                    while current_time < total_time:
+                        s_start = current_time
+                        s_end = min(current_time + scene_target_duration, total_time)
+                        
+                        # รวบรวมข้อความเฉพาะช่วงเวลาสั้นๆ นั้นๆ เพื่อไปค้นหาภาพ AI (ถ้าใช้)
+                        scene_text = ""
+                        for seg in segments_to_process:
+                            if seg['start'] < s_end and seg['end'] > s_start:
+                                scene_text += seg['text'] + " "
+                                
+                        scenes.append({"idx": s_idx, "start": s_start, "end": s_end, "text": scene_text.strip()})
+                        current_time += scene_target_duration
+                        s_idx += 1
                     
                     chunk_size = 2 if "2 บรรทัด" in sub_config["line_limit"] else (1 if "1 บรรทัด" in sub_config["line_limit"] else 0)
                     
