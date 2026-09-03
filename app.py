@@ -294,8 +294,12 @@ client = Groq(api_key=api_key)
 # =========================================================
 st.sidebar.title("🎬 AI Studio Pro")
 st.sidebar.markdown("---")
-app_mode = st.sidebar.radio("📌 เลือกโหมดการทำงาน:", ["🎭 โหมด 1: สร้างคลิปไร้หน้า (Faceless)", "🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join & Sub)"])
 
+app_mode = st.sidebar.radio("📌 เลือกโหมดการทำงาน:", [
+    "🎭 โหมด 1: สร้างคลิปไร้หน้า (Faceless)", 
+    "🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join & Sub)",
+    "✂️ โหมด 3: สตูดิโอหั่นคลิปด่วน (Smart Cut)"
+])
 st.sidebar.markdown("---")
 st.sidebar.markdown("**TH เครื่องมือแก้สระลอย (อัปเกรด)**")
 
@@ -983,3 +987,98 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                 with col_btn2:
                     with open("subtitles_m2.srt", "rb") as f:
                         st.download_button("📝 โหลดไฟล์ (.SRT)", f, "subtitles.srt", "text/plain", use_container_width=True)
+
+# =========================================================
+# ✂️ โหมด 3: สตูดิโอหั่นคลิปด่วน (Smart Trim & Cut)
+# =========================================================
+elif app_mode == "✂️ โหมด 3: สตูดิโอหั่นคลิปด่วน (Smart Cut)":
+    st.markdown("## ✂️ สตูดิโอหั่นคลิปและตัดช่วงเงียบอัตโนมัติ")
+    st.markdown("ระบบนี้จะประมวลผลจาก 'คลื่นเสียง' โดยตรง (ไม่ต้องรอ AI ถอดซับ) ทำให้ตัดเสร็จไวมาก!")
+    st.markdown("---")
+    
+    uploaded_video = st.file_uploader("📂 อัปโหลดวิดีโอต้นฉบับ (MP4/MOV)", type=["mp4", "mov", "webm"])
+    
+    st.markdown("### ⚙️ ตั้งค่าการหั่นคลิป")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        trim_end = st.number_input("✂️ ตัดท้ายคลิปออก (วินาที)", min_value=0.0, max_value=60.0, value=0.0, step=0.5, help="ตัดส่วนเกินตอนจบวิดีโอออก")
+    with col2:
+        silence_thresh = st.slider("🎚️ ระดับความเงียบ (dB)", min_value=-60, max_value=-10, value=-35, step=1, help="ยิ่งติดลบเยอะ ยิ่งแปลว่าต้องเงียบสนิทจริงๆ ถึงจะถูกหั่นทิ้ง")
+    with col3:
+        silence_duration = st.slider("⏱️ เงียบกี่วิถึงจะตัด (วินาที)", min_value=0.5, max_value=5.0, value=2.0, step=0.1, help="ถ้าเสียงเงียบติดต่อกันเกินเวลานี้ ระบบจะหั่นส่วนนั้นทิ้งทันที")
+        
+    if uploaded_video and st.button("🚀 เริ่มตัดคลิปอัตโนมัติ", type="primary", use_container_width=True):
+        ensure_ffmpeg_engine()
+        ACTIVE_FFMPEG = "./ffmpeg" if os.path.exists("./ffmpeg") else "ffmpeg"
+        
+        with st.spinner("⏳ กำลังวิเคราะห์คลื่นเสียงและหั่นคลิป..."):
+            input_path = "m3_input.mp4"
+            with open(input_path, "wb") as f:
+                f.write(uploaded_video.getbuffer())
+            
+            orig_dur = get_video_duration(input_path)
+            target_dur = max(0.1, orig_dur - trim_end) # ความยาวเป้าหมายหลังจากตัดท้ายคลิป
+            
+            # สแกนหาช่วงเงียบในวิดีโอ
+            cmd_detect = [ACTIVE_FFMPEG, '-i', input_path, '-af', f'silencedetect=noise={silence_thresh}dB:d={silence_duration}', '-f', 'null', '-']
+            result = subprocess.run(cmd_detect, capture_output=True, text=True)
+            stderr_output = result.stderr
+            
+            # ดึงตัวเลขเวลาที่เริ่มเงียบ และเวลาที่หายเงียบ
+            starts = re.findall(r'silence_start:\s+([\d\.]+)', stderr_output)
+            ends = re.findall(r'silence_end:\s+([\d\.]+)', stderr_output)
+            
+            silences = []
+            for i in range(len(starts)):
+                s = float(starts[i])
+                e = float(ends[i]) if i < len(ends) else target_dur
+                silences.append({"start": s, "end": e})
+                
+            # คำนวณช่วงเวลาที่จะ "เก็บไว้" (เอาช่วงเงียบออก)
+            keep_segments = []
+            current_time = 0.0
+            
+            for sil in silences:
+                sil_start = sil['start']
+                sil_end = sil['end']
+                
+                if sil_start >= target_dur:
+                    break 
+                    
+                if sil_start > current_time:
+                    keep_segments.append({"start": current_time, "end": sil_start})
+                
+                current_time = sil_end
+                
+            if current_time < target_dur:
+                keep_segments.append({"start": current_time, "end": target_dur})
+                
+            if not keep_segments: # กันเหนียว กรณีคลิปเงียบกริบทั้งคลิป
+                keep_segments.append({"start": 0.0, "end": target_dur})
+                
+            # เอาช่วงที่เก็บไว้มาประกอบร่างกันใหม่
+            filter_complex = ""
+            concat_inputs = ""
+            for i, b in enumerate(keep_segments):
+                filter_complex += f"[0:v]trim=start={b['start']}:end={b['end']},setpts=PTS-STARTPTS[v{i}];[0:a]atrim=start={b['start']}:end={b['end']},asetpts=PTS-STARTPTS[a{i}];"
+                concat_inputs += f"[v{i}][a{i}]"
+                
+            filter_complex += f"{concat_inputs}concat=n={len(keep_segments)}:v=1:a=1[outv][outa]"
+            
+            output_path = "m3_output.mp4"
+            cmd_render = [
+                ACTIVE_FFMPEG, '-y', '-i', input_path, 
+                '-filter_complex', filter_complex, 
+                '-map', '[outv]', '-map', '[outa]', 
+                '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
+                '-c:a', 'aac', '-b:a', '256k', output_path
+            ]
+            subprocess.run(cmd_render, check=True)
+            
+            st.success("🎉 หั่นคลิปเสร็จเรียบร้อย! ประหยัดเวลาไปได้เยอะเลยครับ")
+            
+            col_space1, col_vid, col_space2 = st.columns([1.5, 2, 1.5])
+            with col_vid:
+                st.video(output_path)
+                with open(output_path, "rb") as f:
+                    st.download_button("📥 โหลดวิดีโอที่ตัดแล้ว (MP4)", f, "smart_cut_video.mp4", "video/mp4", type="primary", use_container_width=True)
