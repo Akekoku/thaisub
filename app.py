@@ -990,31 +990,45 @@ elif app_mode == "✂️ โหมด 3: สตูดิโอหั่นคล
     with col2:
         silence_thresh = st.slider("🎚️ ระดับความเงียบ (dB)", min_value=-60, max_value=-10, value=-35, step=1, help="ยิ่งติดลบเยอะ ยิ่งแปลว่าต้องเงียบสนิทจริงๆ ถึงจะถูกหั่นทิ้ง")
     with col3:
-        silence_duration = st.slider("⏱️ เงียบกี่วิถึงจะตัด (วินาที)", min_value=0.1, max_value=5.0, value=2.0, step=0.1, help="ถ้าเสียงเงียบติดต่อกันเกินเวลานี้ ระบบจะหั่นส่วนนั้นทิ้งทันที")
+        silence_duration = st.slider("⏱️ เงียบกี่วิถึงจะตัด (วินาที)", min_value=0.1, max_value=5.0, value=0.5, step=0.1, help="แนะนำ 0.2-0.5 วินาที เพื่อให้รอยต่อกระชับที่สุด")
         
     if uploaded_videos_m3 and st.button("🚀 เริ่มต่อและตัดคลิปอัตโนมัติ", type="primary", use_container_width=True):
         ensure_ffmpeg_engine()
         ACTIVE_FFMPEG = "./ffmpeg" if os.path.exists("./ffmpeg") else "ffmpeg"
         
-        with st.spinner("⏳ กำลังรวมคลิป วิเคราะห์คลื่นเสียง และหั่นช่วงเงียบ..."):
-            # Step 1: รวมวิดีโอทั้งหมดเป็นไฟล์เดียว (ปรับสัดส่วนภาพให้เท่ากันเพื่อป้องกันไฟล์พัง)
+        # 🌟 ระบบหลอด Progress Bar และกล่องข้อความรายงานสถานะ
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        try:
+            # Step 1: ปรับสเปกและรวมวิดีโอ
+            status_text.info("⏳ [สเตป 1/4] กำลังเตรียมไฟล์และปรับสเปกวิดีโอให้เฟรมเรตคงที่...")
+            progress_bar.progress(10)
+            
             with open("concat_m3.txt", "w", encoding="utf-8") as f:
+                total_vids = len(uploaded_videos_m3)
                 for i, vid in enumerate(uploaded_videos_m3):
                     v_path = f"m3_part_{i}.mp4"
                     norm_v_path = f"norm_{v_path}"
                     with open(v_path, "wb") as f_vid:
                         f_vid.write(vid.getbuffer())
                     
-                    # ปรับเป็น 720x1280 (แนวตั้ง) ให้หมด เพื่อให้เย็บต่อกันได้ 100%
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', v_path, '-vf', 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p', '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', norm_v_path], check=True)
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', v_path, '-vf', 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p', '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', '-ar', '44100', norm_v_path], check=True)
                     f.write(f"file '{norm_v_path}'\n")
+                    
+                    # ขยับหลอดโหลดตามจำนวนคลิป
+                    current_prog = 10 + int(40 * ((i + 1) / total_vids))
+                    progress_bar.progress(current_prog)
             
+            status_text.info("⏳ [สเตป 2/4] กำลังเย็บรอยต่อวิดีโอเข้าด้วยกัน...")
             subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat_m3.txt', '-c', 'copy', 'm3_joined.mp4'], check=True)
+            progress_bar.progress(60)
             
             orig_dur = get_video_duration('m3_joined.mp4')
             target_dur = max(0.1, orig_dur - trim_end)
             
-            # Step 2: สแกนหาช่วงเงียบ "ก่อน" ที่จะใส่เพลงคลอ (เพื่อให้ระบบจับความเงียบได้แม่นยำ)
+            # Step 2: สแกนหาช่วงเงียบ
+            status_text.info("⏳ [สเตป 3/4] กำลังสแกนหาคลื่นเสียงและคำนวณจุดตัด Dead Air...")
             cmd_detect = [ACTIVE_FFMPEG, '-i', 'm3_joined.mp4', '-af', f'silencedetect=noise={silence_thresh}dB:d={silence_duration}', '-f', 'null', '-']
             result = subprocess.run(cmd_detect, capture_output=True, text=True)
             stderr_output = result.stderr
@@ -1043,8 +1057,10 @@ elif app_mode == "✂️ โหมด 3: สตูดิโอหั่นคล
                 
             if not keep_segments:
                 keep_segments.append({"start": 0.0, "end": target_dur})
+            progress_bar.progress(70)
                 
             # Step 3: หั่นทิ้งเฉพาะช่วงที่เงียบ (Jump Cut)
+            status_text.info(f"⏳ [สเตป 4/4] กำลังเอามีดสับช่วงเงียบออก และเรนเดอร์วิดีโอรอบสุดท้าย...")
             filter_complex = ""
             concat_inputs = ""
             for i, b in enumerate(keep_segments):
@@ -1060,32 +1076,32 @@ elif app_mode == "✂️ โหมด 3: สตูดิโอหั่นคล
                 '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
                 '-c:a', 'aac', '-b:a', '256k', 'm3_cut.mp4'
             ], check=True)
+            progress_bar.progress(90)
             
-            # Step 4: มิกซ์เพลงคลอทับลงไป (หลังจากหั่นเสร็จแล้ว)
+            # Step 4: มิกซ์เพลงคลอทับลงไป
             output_path = "m3_final.mp4"
             if bgm_file_m3:
-                with st.spinner("🎵 กำลังมิกซ์เสียงกับเพลงคลอ..."):
-                    with open("m3_bgm_raw.mp3", "wb") as f:
-                        f.write(bgm_file_m3.getbuffer())
-                    bgm_vol_float = bgm_volume_m3 / 100.0
-                    
-                    # แยกเสียงพากย์หลักออกมาจากวิดีโอที่ตัดแล้ว
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'm3_cut.mp4', '-vn', '-c:a', 'libmp3lame', 'm3_cut_audio.mp3'], check=True)
-                    
-                    # มิกซ์เสียงพากย์กับเสียงดนตรีคลอ
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'm3_cut_audio.mp3', '-i', 'm3_bgm_raw.mp3', 
-                                    '-filter_complex', f'[0:a]volume=1.0[a1];[1:a]volume={bgm_vol_float}[a2];[a1][a2]amix=inputs=2:duration=first[aout]', 
-                                    '-map', '[aout]', '-c:a', 'libmp3lame', 'm3_mixed_audio.mp3'], check=True)
-                    
-                    # รวมร่างวิดีโอกลับเข้าไป
-                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'm3_cut.mp4', '-i', 'm3_mixed_audio.mp3', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', output_path], check=True)
+                status_text.info("🎵 กำลังมิกซ์เสียงวิดีโอกับเพลงคลอ (BGM)...")
+                with open("m3_bgm_raw.mp3", "wb") as f:
+                    f.write(bgm_file_m3.getbuffer())
+                bgm_vol_float = bgm_volume_m3 / 100.0
+                
+                subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'm3_cut.mp4', '-vn', '-c:a', 'libmp3lame', 'm3_cut_audio.mp3'], check=True)
+                subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'm3_cut_audio.mp3', '-i', 'm3_bgm_raw.mp3', 
+                                '-filter_complex', f'[0:a]volume=1.0[a1];[1:a]volume={bgm_vol_float}[a2];[a1][a2]amix=inputs=2:duration=first[aout]', 
+                                '-map', '[aout]', '-c:a', 'libmp3lame', 'm3_mixed_audio.mp3'], check=True)
+                subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'm3_cut.mp4', '-i', 'm3_mixed_audio.mp3', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', output_path], check=True)
             else:
                 shutil.copy("m3_cut.mp4", output_path)
             
-            st.success("🎉 ต่อคลิป ใส่เพลง และหั่นช่วงเงียบเสร็จสมบูรณ์! ไวแบบติดจรวด")
+            progress_bar.progress(100)
+            status_text.success("🎉 ต่อคลิป ใส่เพลง และหั่นช่วงเงียบเสร็จสมบูรณ์! ไวแบบติดจรวด")
             
             col_space1, col_vid, col_space2 = st.columns([1.5, 2, 1.5])
             with col_vid:
                 st.video(output_path)
                 with open(output_path, "rb") as f:
                     st.download_button("📥 โหลดวิดีโอที่ตัดแล้ว (MP4)", f, "smart_cut_joined.mp4", "video/mp4", type="primary", use_container_width=True)
+                    
+        except Exception as e:
+            status_text.error(f"❌ เกิดข้อผิดพลาดระหว่างประมวลผล: {e}")
