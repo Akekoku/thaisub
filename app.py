@@ -990,7 +990,7 @@ elif app_mode == "✂️ โหมด 3: สตูดิโอหั่นคล
     with col2:
         silence_thresh = st.slider("🎚️ ระดับความเงียบ (dB)", min_value=-60, max_value=-10, value=-35, step=1, help="ยิ่งติดลบเยอะ ยิ่งแปลว่าต้องเงียบสนิทจริงๆ ถึงจะถูกหั่นทิ้ง")
     with col3:
-        silence_duration = st.slider("⏱️ เงียบกี่วิถึงจะตัด (วินาที)", min_value=0.5, max_value=5.0, value=2.0, step=0.1, help="ถ้าเสียงเงียบติดต่อกันเกินเวลานี้ ระบบจะหั่นส่วนนั้นทิ้งทันที")
+        silence_duration = st.slider("⏱️ เงียบกี่วิถึงจะตัด (วินาที)", min_value=0.1, max_value=5.0, value=2.0, step=0.1, help="ถ้าเสียงเงียบติดต่อกันเกินเวลานี้ ระบบจะหั่นส่วนนั้นทิ้งทันที")
         
     if uploaded_videos_m3 and st.button("🚀 เริ่มต่อและตัดคลิปอัตโนมัติ", type="primary", use_container_width=True):
         ensure_ffmpeg_engine()
