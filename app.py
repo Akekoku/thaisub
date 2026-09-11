@@ -294,12 +294,8 @@ client = Groq(api_key=api_key)
 # =========================================================
 st.sidebar.title("🎬 AI Studio Pro")
 st.sidebar.markdown("---")
+app_mode = st.sidebar.radio("📌 เลือกโหมดการทำงาน:", ["🎭 โหมด 1: สร้างคลิปไร้หน้า (Faceless)", "🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join & Sub)", "✂️ โหมด 3: สตูดิโอหั่นคลิปด่วน (Smart Cut)"])
 
-app_mode = st.sidebar.radio("📌 เลือกโหมดการทำงาน:", [
-    "🎭 โหมด 1: สร้างคลิปไร้หน้า (Faceless)", 
-    "🎞️ โหมด 2: ต่อคลิปและฝังซับ (Join & Sub)",
-    "✂️ โหมด 3: สตูดิโอหั่นคลิปด่วน (Smart Cut)"
-])
 st.sidebar.markdown("---")
 st.sidebar.markdown("**TH เครื่องมือแก้สระลอย (อัปเกรด)**")
 
@@ -585,34 +581,16 @@ if app_mode == "🎭 โหมด 1: สร้างคลิปไร้หน�
                     
                     ass_content = f"""[Script Info]\nScriptType: v4.00+\nPlayResX: {video_width}\nPlayResY: {video_height}\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,{sub_config["font"]},{ass_font_size},{hex_to_ass_color(sub_config["t_color"])},&H0000FFFF,{hex_to_ass_color(sub_config["o_color"])},&H80000000,0,0,0,0,100,100,0,0,{3 if sub_config["bg_style"] == "แถบกล่องดำรองหลัง" else 1},{ass_outline},0,2,10,10,{ass_margin_v},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"""
                     
-                    # 🌟 อัปเกรดจุดที่ 1: เตรียมเนื้อหาซับไตเติล
-                    segments_data_for_subs = []
+                    segments_data_for_subs, scenes, current_scene, s_start, s_idx = [], [], "", 0.0, 1
                     for seg in segments_to_process:
                         s, e, t = seg['start'], seg['end'], seg['text']
                         for old_w, new_w in sub_config["replacements"].items(): t = re.sub(re.escape(old_w), new_w, t, flags=re.IGNORECASE)
                         t = fix_thai_floating_vowels(t)
                         segments_data_for_subs.append((t, s, e))
-                        
-                    # 🌟 อัปเกรดจุดที่ 2: สับฉากด้วยเวลาล้วนๆ ไม่ง้อประโยค AI
-                    scenes = []
-                    current_time = 0.0
-                    s_idx = 1
-                    total_time = segments_to_process[-1]['end'] if segments_to_process else orig_dur_process
-                    if total_time <= 0: total_time = 1.0 # กันบั๊กเสียงสั้นเกิน
-
-                    while current_time < total_time:
-                        s_start = current_time
-                        s_end = min(current_time + scene_target_duration, total_time)
-                        
-                        # รวบรวมข้อความเฉพาะช่วงเวลาสั้นๆ นั้นๆ เพื่อไปค้นหาภาพ AI (ถ้าใช้)
-                        scene_text = ""
-                        for seg in segments_to_process:
-                            if seg['start'] < s_end and seg['end'] > s_start:
-                                scene_text += seg['text'] + " "
-                                
-                        scenes.append({"idx": s_idx, "start": s_start, "end": s_end, "text": scene_text.strip()})
-                        current_time += scene_target_duration
-                        s_idx += 1
+                        if current_scene == "": s_start = s
+                        current_scene += t + " "
+                        if (e - s_start) >= scene_target_duration: scenes.append({"idx": s_idx, "start": s_start, "end": e, "text": current_scene}); s_idx += 1; current_scene = ""
+                    if current_scene: scenes.append({"idx": s_idx, "start": s_start, "end": segments_to_process[-1]['end'], "text": current_scene})
                     
                     chunk_size = 2 if "2 บรรทัด" in sub_config["line_limit"] else (1 if "1 บรรทัด" in sub_config["line_limit"] else 0)
                     
@@ -989,16 +967,23 @@ elif app_mode == "🎞️ โหมด 2: ต่อคลิปและฝั�
                         st.download_button("📝 โหลดไฟล์ (.SRT)", f, "subtitles.srt", "text/plain", use_container_width=True)
 
 # =========================================================
-# ✂️ โหมด 3: สตูดิโอหั่นคลิปด่วน (Smart Trim & Cut)
+# ✂️ โหมด 3: สตูดิโอหั่นคลิปด่วนและต่อวิดีโอ (Smart Join & Cut)
 # =========================================================
 elif app_mode == "✂️ โหมด 3: สตูดิโอหั่นคลิปด่วน (Smart Cut)":
-    st.markdown("## ✂️ สตูดิโอหั่นคลิปและตัดช่วงเงียบอัตโนมัติ")
-    st.markdown("ระบบนี้จะประมวลผลจาก 'คลื่นเสียง' โดยตรง (ไม่ต้องรอ AI ถอดซับ) ทำให้ตัดเสร็จไวมาก!")
+    st.markdown("## ✂️ สตูดิโอหั่นคลิปด่วนและต่อวิดีโอ (Smart Join & Cut)")
+    st.markdown("ระบบนี้จะประมวลผลจาก 'คลื่นเสียง' โดยตรง (ไม่ต้องรอ AI ถอดซับ) ตัดฉับไว แถมต่อคลิปและใส่เพลงคลอได้ในตัว!")
     st.markdown("---")
     
-    uploaded_video = st.file_uploader("📂 อัปโหลดวิดีโอต้นฉบับ (MP4/MOV)", type=["mp4", "mov", "webm"])
+    st.markdown("### 1️⃣ อัปโหลดวิดีโอและเพลงคลอ")
+    uploaded_videos_m3 = st.file_uploader("📂 อัปโหลดวิดีโอต้นฉบับ (MP4/MOV) - เลือกได้หลายไฟล์", type=["mp4", "mov", "webm"], accept_multiple_files=True, key="m3_vids")
     
-    st.markdown("### ⚙️ ตั้งค่าการหั่นคลิป")
+    bgm_file_m3 = st.file_uploader("🎵 อัปโหลดไฟล์เพลงคลอ (MP3/WAV) - *ไม่บังคับ*", type=["mp3", "wav"], key="m3_bgm")
+    if bgm_file_m3:
+        bgm_volume_m3 = st.slider("🔊 ระดับเสียงเพลงคลอ (%)", 1, 100, 15, key="m3_bgm_vol")
+    else:
+        bgm_volume_m3 = 15
+
+    st.markdown("### 2️⃣ ตั้งค่าการหั่นคลิป")
     col1, col2, col3 = st.columns(3)
     with col1:
         trim_end = st.number_input("✂️ ตัดท้ายคลิปออก (วินาที)", min_value=0.0, max_value=60.0, value=0.0, step=0.5, help="ตัดส่วนเกินตอนจบวิดีโอออก")
@@ -1007,24 +992,33 @@ elif app_mode == "✂️ โหมด 3: สตูดิโอหั่นคล
     with col3:
         silence_duration = st.slider("⏱️ เงียบกี่วิถึงจะตัด (วินาที)", min_value=0.5, max_value=5.0, value=2.0, step=0.1, help="ถ้าเสียงเงียบติดต่อกันเกินเวลานี้ ระบบจะหั่นส่วนนั้นทิ้งทันที")
         
-    if uploaded_video and st.button("🚀 เริ่มตัดคลิปอัตโนมัติ", type="primary", use_container_width=True):
+    if uploaded_videos_m3 and st.button("🚀 เริ่มต่อและตัดคลิปอัตโนมัติ", type="primary", use_container_width=True):
         ensure_ffmpeg_engine()
         ACTIVE_FFMPEG = "./ffmpeg" if os.path.exists("./ffmpeg") else "ffmpeg"
         
-        with st.spinner("⏳ กำลังวิเคราะห์คลื่นเสียงและหั่นคลิป..."):
-            input_path = "m3_input.mp4"
-            with open(input_path, "wb") as f:
-                f.write(uploaded_video.getbuffer())
+        with st.spinner("⏳ กำลังรวมคลิป วิเคราะห์คลื่นเสียง และหั่นช่วงเงียบ..."):
+            # Step 1: รวมวิดีโอทั้งหมดเป็นไฟล์เดียว (ปรับสัดส่วนภาพให้เท่ากันเพื่อป้องกันไฟล์พัง)
+            with open("concat_m3.txt", "w", encoding="utf-8") as f:
+                for i, vid in enumerate(uploaded_videos_m3):
+                    v_path = f"m3_part_{i}.mp4"
+                    norm_v_path = f"norm_{v_path}"
+                    with open(v_path, "wb") as f_vid:
+                        f_vid.write(vid.getbuffer())
+                    
+                    # ปรับเป็น 720x1280 (แนวตั้ง) ให้หมด เพื่อให้เย็บต่อกันได้ 100%
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', v_path, '-vf', 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p', '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-c:a', 'aac', norm_v_path], check=True)
+                    f.write(f"file '{norm_v_path}'\n")
             
-            orig_dur = get_video_duration(input_path)
-            target_dur = max(0.1, orig_dur - trim_end) # ความยาวเป้าหมายหลังจากตัดท้ายคลิป
+            subprocess.run([ACTIVE_FFMPEG, '-y', '-f', 'concat', '-safe', '0', '-i', 'concat_m3.txt', '-c', 'copy', 'm3_joined.mp4'], check=True)
             
-            # สแกนหาช่วงเงียบในวิดีโอ
-            cmd_detect = [ACTIVE_FFMPEG, '-i', input_path, '-af', f'silencedetect=noise={silence_thresh}dB:d={silence_duration}', '-f', 'null', '-']
+            orig_dur = get_video_duration('m3_joined.mp4')
+            target_dur = max(0.1, orig_dur - trim_end)
+            
+            # Step 2: สแกนหาช่วงเงียบ "ก่อน" ที่จะใส่เพลงคลอ (เพื่อให้ระบบจับความเงียบได้แม่นยำ)
+            cmd_detect = [ACTIVE_FFMPEG, '-i', 'm3_joined.mp4', '-af', f'silencedetect=noise={silence_thresh}dB:d={silence_duration}', '-f', 'null', '-']
             result = subprocess.run(cmd_detect, capture_output=True, text=True)
             stderr_output = result.stderr
             
-            # ดึงตัวเลขเวลาที่เริ่มเงียบ และเวลาที่หายเงียบ
             starts = re.findall(r'silence_start:\s+([\d\.]+)', stderr_output)
             ends = re.findall(r'silence_end:\s+([\d\.]+)', stderr_output)
             
@@ -1034,29 +1028,23 @@ elif app_mode == "✂️ โหมด 3: สตูดิโอหั่นคล
                 e = float(ends[i]) if i < len(ends) else target_dur
                 silences.append({"start": s, "end": e})
                 
-            # คำนวณช่วงเวลาที่จะ "เก็บไว้" (เอาช่วงเงียบออก)
             keep_segments = []
             current_time = 0.0
-            
             for sil in silences:
                 sil_start = sil['start']
                 sil_end = sil['end']
-                
-                if sil_start >= target_dur:
-                    break 
-                    
+                if sil_start >= target_dur: break 
                 if sil_start > current_time:
                     keep_segments.append({"start": current_time, "end": sil_start})
-                
                 current_time = sil_end
                 
             if current_time < target_dur:
                 keep_segments.append({"start": current_time, "end": target_dur})
                 
-            if not keep_segments: # กันเหนียว กรณีคลิปเงียบกริบทั้งคลิป
+            if not keep_segments:
                 keep_segments.append({"start": 0.0, "end": target_dur})
                 
-            # เอาช่วงที่เก็บไว้มาประกอบร่างกันใหม่
+            # Step 3: หั่นทิ้งเฉพาะช่วงที่เงียบ (Jump Cut)
             filter_complex = ""
             concat_inputs = ""
             for i, b in enumerate(keep_segments):
@@ -1065,20 +1053,39 @@ elif app_mode == "✂️ โหมด 3: สตูดิโอหั่นคล
                 
             filter_complex += f"{concat_inputs}concat=n={len(keep_segments)}:v=1:a=1[outv][outa]"
             
-            output_path = "m3_output.mp4"
-            cmd_render = [
-                ACTIVE_FFMPEG, '-y', '-i', input_path, 
+            subprocess.run([
+                ACTIVE_FFMPEG, '-y', '-i', 'm3_joined.mp4', 
                 '-filter_complex', filter_complex, 
                 '-map', '[outv]', '-map', '[outa]', 
                 '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', 
-                '-c:a', 'aac', '-b:a', '256k', output_path
-            ]
-            subprocess.run(cmd_render, check=True)
+                '-c:a', 'aac', '-b:a', '256k', 'm3_cut.mp4'
+            ], check=True)
             
-            st.success("🎉 หั่นคลิปเสร็จเรียบร้อย! ประหยัดเวลาไปได้เยอะเลยครับ")
+            # Step 4: มิกซ์เพลงคลอทับลงไป (หลังจากหั่นเสร็จแล้ว)
+            output_path = "m3_final.mp4"
+            if bgm_file_m3:
+                with st.spinner("🎵 กำลังมิกซ์เสียงกับเพลงคลอ..."):
+                    with open("m3_bgm_raw.mp3", "wb") as f:
+                        f.write(bgm_file_m3.getbuffer())
+                    bgm_vol_float = bgm_volume_m3 / 100.0
+                    
+                    # แยกเสียงพากย์หลักออกมาจากวิดีโอที่ตัดแล้ว
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'm3_cut.mp4', '-vn', '-c:a', 'libmp3lame', 'm3_cut_audio.mp3'], check=True)
+                    
+                    # มิกซ์เสียงพากย์กับเสียงดนตรีคลอ
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'm3_cut_audio.mp3', '-i', 'm3_bgm_raw.mp3', 
+                                    '-filter_complex', f'[0:a]volume=1.0[a1];[1:a]volume={bgm_vol_float}[a2];[a1][a2]amix=inputs=2:duration=first[aout]', 
+                                    '-map', '[aout]', '-c:a', 'libmp3lame', 'm3_mixed_audio.mp3'], check=True)
+                    
+                    # รวมร่างวิดีโอกลับเข้าไป
+                    subprocess.run([ACTIVE_FFMPEG, '-y', '-i', 'm3_cut.mp4', '-i', 'm3_mixed_audio.mp3', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', output_path], check=True)
+            else:
+                shutil.copy("m3_cut.mp4", output_path)
+            
+            st.success("🎉 ต่อคลิป ใส่เพลง และหั่นช่วงเงียบเสร็จสมบูรณ์! ไวแบบติดจรวด")
             
             col_space1, col_vid, col_space2 = st.columns([1.5, 2, 1.5])
             with col_vid:
                 st.video(output_path)
                 with open(output_path, "rb") as f:
-                    st.download_button("📥 โหลดวิดีโอที่ตัดแล้ว (MP4)", f, "smart_cut_video.mp4", "video/mp4", type="primary", use_container_width=True)
+                    st.download_button("📥 โหลดวิดีโอที่ตัดแล้ว (MP4)", f, "smart_cut_joined.mp4", "video/mp4", type="primary", use_container_width=True)
